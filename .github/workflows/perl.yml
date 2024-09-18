@@ -42,7 +42,7 @@ jobs:
           rm -f cpanfile.snapshot
           cp .github/travelynx.conf travelynx.conf
       - name: Install PostgreSQL Client Library
-        run: apt install libpq-dev
+        run: apt install libpq-dev -y
       - name: Install Perl Dependencies
         run: curl -sL https://raw.githubusercontent.com/skaji/cpm/master/cpm | perl - install -g --show-build-log-on-failure
       - name: Run Tests
