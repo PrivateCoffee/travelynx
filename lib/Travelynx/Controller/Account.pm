@@ -48,7 +48,7 @@ sub send_registration_mail {
 	my $reg_url     = $self->url_for('reg')->to_abs->scheme('https');
 	my $imprint_url = $self->url_for('impressum')->to_abs->scheme('https');
 
-	my $body = "Hallo, ${user}!\n\n";
+	my $body = "Hallo!\n\n";
 	$body .= "Mit deiner E-Mail-Adresse (${email}) wurde ein Account bei\n";
 	$body .= "travelynx angelegt.\n\n";
 	$body
