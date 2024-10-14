@@ -34,6 +34,9 @@
 
 %= form_for '/history/map' => begin
 	<p>
+		Gesamtdistanz: <%= sprintf("%.2f", $total_distance // 0) %> km
+	</p>
+	<p>
 		Detailgrad:
 	</p>
 	<div class="row">

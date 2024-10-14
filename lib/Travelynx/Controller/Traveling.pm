@@ -1342,6 +1342,7 @@ sub map_history {
 		with_polyline => $with_polyline,
 		after         => $filter_from,
 		before        => $filter_until,
+		verbose       => 1
 	);
 
 	if ($filter_type) {
@@ -1357,11 +1358,18 @@ sub map_history {
 			skipped_journeys    => [],
 			station_coordinates => [],
 			polyline_groups     => [],
+			distance_traveled	=> 0,
 		);
 		return;
 	}
 
 	my $include_manual = $self->param('include_manual') ? 1 : 0;
+
+	my $total_distance = 0;
+
+	for my $journey (@journeys) {
+		$total_distance += $journey->{km_route} // 0;
+	}
 
 	my $res = $self->journeys_to_map_data(
 		journeys       => \@journeys,
@@ -1374,6 +1382,7 @@ sub map_history {
 		year     => $year,
 		with_map => 1,
 		title    => 'travelynx: Karte',
+		total_distance => $total_distance,
 		%{$res}
 	);
 }
