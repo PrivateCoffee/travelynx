@@ -3,6 +3,7 @@
 		<h2>Backend auswählen</h2>
 		<p style="text-align: justify;">
 			Das ausgewählte Backend bestimmt die Datenquelle für Fahrten in travelynx.
+			<a href="#help">Hilfe bei der Auswahl</a>.
 		</p>
 	</div>
 </div>
@@ -31,18 +32,23 @@
 %= end
 <div class="row">
 	<div class="col s12">
-		<h2>Details</h2>
+		<h2 id="help">Hilfe</h2>
 		<p>
-			<strong>Deutsche Bahn</strong> ist eine gute Wahl für Nah-, Regional- und Fernverkehr in Deutschland und (teilweise) Nachbarländern.
-			Hier stehen zumeist brauchbare Echtzeitdaten zur Verfügung; bei Zügen sind zusätzlich Kartendaten vorhanden.
+			Leider gibt es seit der Abschaltung des DB HAFAS am 8. Januar 2025 derzeit kein Backend, welches allgemein für Nah- und Fernverkehr in Deutschland nutzbar ist.
+			Der <strong>VRN</strong> kommt voraussichtlich am ehesten an Qualität und Umfang der im DB HAFAS verfügbaren Daten heran.
+			Im Übrigen muss je nach Verkehrsmittel, Region und Wünschen an die verfügbaren Daten hier ein geeignetes Backend ausgewählt werden.
+			Abhilfe ist in Arbeit.
 		</p>
 		<p>
-			<strong>Deutsche Bahn (IRIS-TTS)</strong> unterstützt ausschließlich Schienenverkehr; im Gegensatz zum HAFAS sind hier detaillierte Verspätungsgründe verfügbar.
+			<strong>VRN</strong> ist eine gute Wahl für Nah-, Regional- und Fernverkehr in Deutschland. Hier gibt es meist Echtzeitdaten, allgemeine Meldungen, Wagenreihungen und Kartendaten.
+			<strong>Deutsche Bahn</strong> (IRIS-TTS) liefert Echtzeitdaten, Wagenreihungen und Verspätungsmeldungen für Regional- und Fernverkehr in Deutschland. In vielen Fällen sind auch allgemeine Meldungen und Kartendaten verfügbar.
+			<strong>ÖBB</strong> liefern Kartendaten und Wagenreihungen für Fernverkehr in Deutschland, jedoch keine Meldungen. Echtzeitdaten sind teilweise verfügbar.
 		</p>
 		<p>
-			Die restlichen Backends können sich für Fahrten in den zugehörigen Verkehrsverbünden lohnen.
-			Im Gegensatz zum Deutsche Bahn-HAFAS haben sie oft besser gepflegte Echtzeitdaten und liefern in vielen (aber nicht allen) Fällen auch Kartendaten für Nahverkehrsmittel wie Busse oder Stadtbahnen.
+			Die restlichen Backends lohnen sich für Fahrten in den zugehörigen Verkehrsverbünden bzw. Ländern.
+			Im Gegensatz zu IRIS-TTS liefern sie in vielen (aber nicht allen) Fällen auch Kartendaten für die dem Verbund zugehörigen Verkehrsmittel.
 			In Einzelfällen (z.B. BVG) sind sogar Auslastungsdaten eingepflegt.
+			Bei Fahrten außerhalb von Deutschland und der Schweiz ist <strong>ÖBB</strong> zumeist die beste Wahl.
 		</p>
 	</div>
 </div>

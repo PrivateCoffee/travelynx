@@ -650,7 +650,8 @@ sub travel_action {
 				return $self->checkin_p(
 					hafas    => $params->{hafas},
 					station  => $params->{station},
-					train_id => $params->{train}
+					train_id => $params->{train},
+					ts       => $params->{ts},
 				);
 			}
 		)->then(
@@ -789,7 +790,8 @@ sub travel_action {
 		$self->checkin_p(
 			hafas    => $params->{hafas},
 			station  => $params->{station},
-			train_id => $params->{train}
+			train_id => $params->{train},
+			ts       => $params->{ts},
 		)->then(
 			sub {
 				$self->render(
@@ -949,11 +951,13 @@ sub station {
 				@results = map { $_->[0] }
 				  sort { $b->[1] <=> $a->[1] }
 				  map { [ $_, $_->datetime->epoch ] } $status->results;
-				$self->stations->add_meta(
-					eva   => $status->station->{eva},
-					meta  => $status->station->{evas} // [],
-					hafas => $hafas_service,
-				);
+				if ( $status->station->{eva} ) {
+					$self->stations->add_meta(
+						eva   => $status->station->{eva},
+						meta  => $status->station->{evas} // [],
+						hafas => $hafas_service,
+					);
+				}
 				$status = {
 					station_eva  => $status->station->{eva},
 					station_name => (
@@ -1127,11 +1131,29 @@ sub station {
 					}
 				)->wait;
 			}
+			elsif ( $err
+				=~ m{svcRes|connection close|Service Temporarily Unavailable} )
+			{
+				$self->render(
+					'bad_gateway',
+					message            => $err,
+					status             => 502,
+					select_new_backend => 1,
+				);
+			}
+			elsif ( $err =~ m{timeout}i ) {
+				$self->render(
+					'gateway_timeout',
+					message            => $err,
+					status             => 504,
+					select_new_backend => 1,
+				);
+			}
 			else {
 				$self->render(
 					'exception',
 					exception => $err,
-					status    => 502
+					status    => 500
 				);
 			}
 		}
@@ -1149,9 +1171,10 @@ sub redirect_to_station {
 sub cancelled {
 	my ($self) = @_;
 	my @journeys = $self->journeys->get(
-		uid           => $self->current_user->{id},
-		cancelled     => 1,
-		with_datetime => 1
+		uid                 => $self->current_user->{id},
+		cancelled           => 1,
+		with_datetime       => 1,
+		with_route_datetime => 1
 	);
 
 	$self->respond_to(
@@ -1687,12 +1710,13 @@ sub journey_details {
 	}
 
 	my $journey = $self->journeys->get_single(
-		uid             => $uid,
-		journey_id      => $journey_id,
-		verbose         => 1,
-		with_datetime   => 1,
-		with_polyline   => 1,
-		with_visibility => 1,
+		uid                 => $uid,
+		journey_id          => $journey_id,
+		verbose             => 1,
+		with_datetime       => 1,
+		with_route_datetime => 1,
+		with_polyline       => 1,
+		with_visibility     => 1,
 	);
 
 	if ($journey) {
@@ -1915,10 +1939,11 @@ sub edit_journey {
 	}
 
 	my $journey = $self->journeys->get_single(
-		uid           => $uid,
-		journey_id    => $journey_id,
-		verbose       => 1,
-		with_datetime => 1,
+		uid                 => $uid,
+		journey_id          => $journey_id,
+		verbose             => 1,
+		with_datetime       => 1,
+		with_route_datetime => 1,
 	);
 
 	if ( not $journey ) {
@@ -2019,11 +2044,12 @@ sub edit_journey {
 
 		if ( not $error ) {
 			$journey = $self->journeys->get_single(
-				uid           => $uid,
-				db            => $db,
-				journey_id    => $journey_id,
-				verbose       => 1,
-				with_datetime => 1,
+				uid                 => $uid,
+				db                  => $db,
+				journey_id          => $journey_id,
+				verbose             => 1,
+				with_datetime       => 1,
+				with_route_datetime => 1,
 			);
 			$error = $self->journeys->sanity_check($journey);
 		}

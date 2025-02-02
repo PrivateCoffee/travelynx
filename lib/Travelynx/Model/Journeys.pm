@@ -301,10 +301,11 @@ sub update {
 	my $rows;
 
 	my $journey = $self->get_single(
-		uid           => $uid,
-		db            => $db,
-		journey_id    => $journey_id,
-		with_datetime => 1,
+		uid                 => $uid,
+		db                  => $db,
+		journey_id          => $journey_id,
+		with_datetime       => 1,
+		with_route_datetime => 1,
 	);
 
 	eval {
@@ -656,6 +657,8 @@ sub get {
 			$ref->{checkout}      = epoch_to_dt( $ref->{checkout_ts} );
 			$ref->{sched_arrival} = epoch_to_dt( $ref->{sched_arr_ts} );
 			$ref->{rt_arrival}    = epoch_to_dt( $ref->{rt_arr_ts} );
+		}
+		if ( $opt{with_route_datetime} ) {
 			for my $stop ( @{ $ref->{route} } ) {
 				for my $k (qw(rt_arr rt_dep sched_arr sched_dep)) {
 					if ( $stop->[2]{$k} ) {
@@ -1091,32 +1094,33 @@ sub sanity_check {
 	if ( defined $journey->{sched_duration}
 		and $journey->{sched_duration} <= 0 )
 	{
-		return
-'Die geplante Dauer dieser Fahrt ist ≤ 0. Teleportation und Zeitreisen werden aktuell nicht unterstützt.';
+		return 'Die geplante Dauer dieser Fahrt ist ≤ 0.'
+		  . ' Teleportation und Zeitreisen werden in diesem Universum nicht unterstützt.';
 	}
 	if ( defined $journey->{rt_duration}
 		and $journey->{rt_duration} <= 0 )
 	{
-		return
-'Die Dauer dieser Fahrt ist ≤ 0. Teleportation und Zeitreisen werden aktuell nicht unterstützt.';
+		return 'Die Dauer dieser Fahrt ist ≤ 0.'
+		  . ' Teleportation und Zeitreisen werden in diesem Universum nicht unterstützt.';
 	}
 	if (    $journey->{sched_duration}
-		and $journey->{sched_duration} > 60 * 60 * 24 )
+		and $journey->{sched_duration} > 60 * 60 * 72 )
 	{
-		return 'Die Fahrt ist länger als 24 Stunden.';
+		return 'Die Fahrt ist länger als drei Tage.';
 	}
 	if (    $journey->{rt_duration}
-		and $journey->{rt_duration} > 60 * 60 * 24 )
+		and $journey->{rt_duration} > 60 * 60 * 72 )
 	{
-		return 'Die Fahrt ist länger als 24 Stunden.';
+		return 'Die Fahrt ist länger als drei Tage.';
 	}
 	if ( $journey->{kmh_route} > 500 or $journey->{kmh_beeline} > 500 ) {
-		return 'Fahrten mit über 500 km/h? Schön wär\'s.';
+		return 'Die berechnete Geschwindigkeit beträgt über 500 km/h.'
+		  . ' Das wirkt unrealistisch.';
 	}
 	if ( $journey->{route} and @{ $journey->{route} } > 199 ) {
 		my $stop_count = @{ $journey->{route} };
-		return
-"Die Fahrt hat $stop_count Unterwegshalte. Also ich weiß ja nicht so recht.";
+		return "Die Fahrt hat $stop_count Unterwegshalte. "
+		  . ' Stimmt das wirklich?';
 	}
 	if ( $journey->{edited} & 0x0010 and not $lax ) {
 		my @unknown_stations

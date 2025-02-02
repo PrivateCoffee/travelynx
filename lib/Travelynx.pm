@@ -441,6 +441,7 @@ sub startup {
 
 			my $station  = $opt{station};
 			my $train_id = $opt{train_id};
+			my $ts       = $opt{ts};
 			my $uid      = $opt{uid} // $self->current_user->{id};
 			my $db       = $opt{db}  // $self->pg->db;
 			my $hafas;
@@ -534,6 +535,7 @@ sub startup {
 
 			my $station  = $opt{station};
 			my $train_id = $opt{train_id};
+			my $ts       = $opt{ts};
 			my $uid      = $opt{uid} // $self->current_user->{id};
 			my $db       = $opt{db}  // $self->pg->db;
 			my $hafas;
@@ -553,7 +555,13 @@ sub startup {
 							or $stop->loc->eva == $station )
 						{
 							$found = $stop;
-							last;
+
+							# Lines may serve the same stop several times.
+							# Keep looking until the scheduled departure
+							# matches the one passed while checking in.
+							if ( $ts and $stop->sched_dep->epoch == $ts ) {
+								last;
+							}
 						}
 					}
 					if ( not $found ) {
@@ -2005,6 +2013,7 @@ sub startup {
 			$self->log->debug(
 "... checked in : $traewelling->{dep_name} $traewelling->{dep_eva} -> $traewelling->{arr_name} $traewelling->{arr_eva}"
 			);
+			$self->users->mark_seen( uid => $uid );
 			my $user_status = $self->get_user_status($uid);
 			if ( $user_status->{checked_in} ) {
 				$self->log->debug(
