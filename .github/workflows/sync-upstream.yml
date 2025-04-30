@@ -34,6 +34,8 @@ jobs:
       - name: Create branch with changes
         if: steps.check_changes.outputs.has_changes == 'true'
         run: |
+          git config user.email "noreply@git.private.coffee"
+          git config user.name "Forgejo CI"
           git checkout -b sync-upstream-$(date +%Y%m%d)
           git merge upstream/main
           git push origin sync-upstream-$(date +%Y%m%d)
