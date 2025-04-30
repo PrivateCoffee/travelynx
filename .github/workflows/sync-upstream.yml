@@ -1,0 +1,53 @@
+name: Sync Fork with Upstream
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-and-pr:
+    runs-on: docker
+    container:
+        image: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/derf/travelynx/
+          git fetch upstream
+          
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet HEAD upstream/main; then
+            echo "No changes detected"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create branch with changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git checkout -b sync-upstream-$(date +%Y%m%d)
+          git merge upstream/main
+          git push origin sync-upstream-$(date +%Y%m%d)
+          
+      - name: Create Pull Request
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          # Using curl to create PR via Forgejo API
+          curl -X POST "https://git.private.coffee/api/v1/repos/${{ github.repository }}/pulls" \
+          -H "accept: application/json" \
+          -H "Authorization: token ${{ secrets.FORGEJO_TOKEN }}" \
+          -d '{
+            "head": "sync-upstream-'"$(date +%Y%m%d)"'",
+            "base": "main",
+            "title": "Sync with upstream repository",
+            "body": "Automated PR to sync changes from upstream repository"
+          }'
