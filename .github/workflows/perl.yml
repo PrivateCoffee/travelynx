@@ -17,6 +17,7 @@ jobs:
           - 'latest'
           - 'threaded'
 
+    runs-on: docker
     container:
       image: perl:${{ matrix.perl-version }}
 
