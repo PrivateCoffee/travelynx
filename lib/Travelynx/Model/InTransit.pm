@@ -95,6 +95,7 @@ sub add {
 	my $db                 = $opt{db} // $self->{pg}->db;
 	my $backend_id         = $opt{backend_id};
 	my $train              = $opt{train};
+	my $train_suffix       = $opt{train_suffix};
 	my $journey            = $opt{journey};
 	my $stop               = $opt{stop};
 	my $checkin_station_id = $opt{departure_eva};
@@ -104,6 +105,8 @@ sub add {
 	my $json = JSON->new;
 
 	if ($train) {
+
+		# IRIS
 		$db->insert(
 			'in_transit',
 			{
@@ -134,7 +137,9 @@ sub add {
 			}
 		);
 	}
-	elsif ( $journey and $stop ) {
+	elsif ( $journey and $stop and $journey->can('product') ) {
+
+		# HAFAS
 		my @route;
 		my $product = $journey->product_at( $stop->loc->eva )
 		  // $journey->product;
@@ -177,6 +182,84 @@ sub add {
 				train_id     => $journey->id,
 				sched_departure => $stop->{sched_dep},
 				real_departure  => $stop->{rt_dep} // $stop->{sched_dep},
+				route           => $json->encode( \@route ),
+				data            => JSON->new->encode(
+					{
+						rt => $stop->{rt_dep} ? 1 : 0,
+						%{ $data // {} }
+					}
+				),
+				backend_id => $backend_id,
+			}
+		);
+	}
+	elsif ( $journey and $stop ) {
+
+		# DBRIS
+		my $number = $journey->train_no // $journey->number // $train_suffix;
+
+		my $line;
+		if ( defined $journey->line_no and $journey->line_no ne $number ) {
+			$line = $journey->line_no;
+		}
+		elsif ( defined $train_suffix and $train_suffix ne $number ) {
+			$line = $train_suffix;
+		}
+
+		my @route;
+		for my $j_stop ( $journey->route ) {
+			push(
+				@route,
+				[
+					$j_stop->name,
+					$j_stop->eva,
+					{
+						sched_arr   => _epoch( $j_stop->sched_arr ),
+						sched_dep   => _epoch( $j_stop->sched_dep ),
+						rt_arr      => _epoch( $j_stop->rt_arr ),
+						rt_dep      => _epoch( $j_stop->rt_dep ),
+						isCancelled => $j_stop->is_cancelled,
+						arr_delay   => $j_stop->arr_delay,
+						dep_delay   => $j_stop->dep_delay,
+						load        => {
+							FIRST  => $j_stop->occupancy_first,
+							SECOND => $j_stop->occupancy_second
+						},
+						lat => $j_stop->lat,
+						lon => $j_stop->lon,
+					}
+				]
+			);
+		}
+		my @messages;
+		for my $msg ( $journey->messages ) {
+			if ( not $msg->{ueberschrift} ) {
+				push(
+					@{ $data->{him_msg} },
+					{
+						header => q{},
+						prio   => $msg->{prioritaet},
+						lead   => $msg->{text}
+					}
+				);
+			}
+		}
+		$db->insert(
+			'in_transit',
+			{
+				user_id   => $uid,
+				cancelled => $stop->is_cancelled
+				? 1
+				: 0,
+				checkin_station_id => $stop->eva,
+				checkin_time => DateTime->now( time_zone => 'Europe/Berlin' ),
+				dep_platform => $stop->platform,
+				train_type   => $journey->type // q{},
+				train_line   => $line,
+				train_no     => $number,
+				train_id     => $data->{trip_id},
+				sched_departure => $stop->sched_dep,
+				real_departure  => $stop->rt_dep // $stop->sched_dep,
 				route           => $json->encode( \@route ),
 				data            => JSON->new->encode(
 					{
@@ -731,6 +814,52 @@ sub update_departure_cancelled {
 	return $rows;
 }
 
+sub update_departure_dbris {
+	my ( $self, %opt ) = @_;
+	my $uid     = $opt{uid};
+	my $db      = $opt{db} // $self->{pg}->db;
+	my $dep_eva = $opt{dep_eva};
+	my $arr_eva = $opt{arr_eva};
+	my $journey = $opt{journey};
+	my $stop    = $opt{stop};
+	my $json    = JSON->new;
+
+	my $res_h = $db->select( 'in_transit', ['data'], { user_id => $uid } )
+	  ->expand->hash;
+	my $data = $res_h ? $res_h->{data} : {};
+
+	$data->{him_msg} = [];
+	for my $msg ( $journey->messages ) {
+		if ( not $msg->{ueberschrift} ) {
+			push(
+				@{ $data->{him_msg} },
+				{
+					header => q{},
+					prio   => $msg->{prioritaet},
+					lead   => $msg->{text}
+				}
+			);
+		}
+	}
+
+	# selecting on user_id and train_no avoids a race condition if a user checks
+	# into a new train while we are fetching data for their previous journey. In
+	# this case, the new train would receive data from the previous journey.
+	$db->update(
+		'in_transit',
+		{
+			real_departure => $stop->{rt_dep},
+			data           => $json->encode($data),
+		},
+		{
+			user_id             => $uid,
+			train_id            => $opt{train_id},
+			checkin_station_id  => $dep_eva,
+			checkout_station_id => $arr_eva,
+		}
+	);
+}
+
 sub update_departure_hafas {
 	my ( $self, %opt ) = @_;
 	my $uid     = $opt{uid};
@@ -798,6 +927,79 @@ sub update_arrival {
 	)->rows;
 
 	return $rows;
+}
+
+sub update_arrival_dbris {
+	my ( $self, %opt ) = @_;
+	my $uid     = $opt{uid};
+	my $db      = $opt{db} // $self->{pg}->db;
+	my $dep_eva = $opt{dep_eva};
+	my $arr_eva = $opt{arr_eva};
+	my $journey = $opt{journey};
+	my $stop    = $opt{stop};
+	my $json    = JSON->new;
+
+	my $res_h = $db->select( 'in_transit', ['data'], { user_id => $uid } )
+	  ->expand->hash;
+	my $data = $res_h ? $res_h->{data} : {};
+
+	$data->{him_msg} = [];
+	for my $msg ( $journey->messages ) {
+		if ( not $msg->{ueberschrift} ) {
+			push(
+				@{ $data->{him_msg} },
+				{
+					header => q{},
+					prio   => $msg->{prioritaet},
+					lead   => $msg->{text}
+				}
+			);
+		}
+	}
+
+	my @route;
+	for my $j_stop ( $journey->route ) {
+		push(
+			@route,
+			[
+				$j_stop->name,
+				$j_stop->eva,
+				{
+					sched_arr   => _epoch( $j_stop->sched_arr ),
+					sched_dep   => _epoch( $j_stop->sched_dep ),
+					rt_arr      => _epoch( $j_stop->rt_arr ),
+					rt_dep      => _epoch( $j_stop->rt_dep ),
+					isCancelled => $j_stop->is_cancelled,
+					arr_delay   => $j_stop->arr_delay,
+					dep_delay   => $j_stop->dep_delay,
+					load        => {
+						FIRST  => $j_stop->occupancy_first,
+						SECOND => $j_stop->occupancy_second
+					},
+					lat => $j_stop->lat,
+					lon => $j_stop->lon,
+				}
+			]
+		);
+	}
+
+	# selecting on user_id and train_no avoids a race condition if a user checks
+	# into a new train while we are fetching data for their previous journey. In
+	# this case, the new train would receive data from the previous journey.
+	$db->update(
+		'in_transit',
+		{
+			real_arrival => $stop->{rt_arr},
+			route        => $json->encode( [@route] ),
+			data         => $json->encode($data),
+		},
+		{
+			user_id             => $uid,
+			train_id            => $opt{train_id},
+			checkin_station_id  => $dep_eva,
+			checkout_station_id => $arr_eva,
+		}
+	);
 }
 
 sub update_arrival_hafas {

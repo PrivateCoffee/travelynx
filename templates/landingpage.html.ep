@@ -57,21 +57,17 @@
 						<div class="card-content">
 							<span class="card-title">Hallo, <%= $user->{name} %>!</span>
 							<p>Du bist gerade nicht eingecheckt.</p>
-							<div class="geolocation" data-recent="<%= join('|', map { $_->{eva} . ';' . $_->{name} . ';' . $_->{hafas} } @{stash('recent_targets') // []} ) %>" data-backend="<%= $user->{backend_id} %>">
+							<div class="geolocation" data-recent="<%= join('|', map { $_->{eva} . ';' . $_->{name} . ';' . $_->{dbris} . ';' . $_->{hafas} } @{stash('recent_targets') // []} ) %>" data-backend="<%= $user->{backend_id} %>">
 								<a class="btn waves-effect waves-light btn-flat request">Stationen in der Umgebung abfragen</a>
 							</div>
+							%= hidden_field backend_dbris => $user->{backend_dbris}
 							<div class="input-field">
 								%= text_field 'station', id => 'station', class => 'autocomplete contrast-color-text', autocomplete => 'off', required => undef
 								<label for="station">Manuelle Eingabe</label>
 							</div>
 						</div>
 						<div class="card-action">
-							% if ($user->{backend_id}) {
-								<a href="/account/select_backend?redirect_to=/" class="btn btn-flat"><i class="material-icons left" aria-hidden="true">directions</i><%= $user->{backend_name} %></a>
-							% }
-							% else {
-								<a href="/account/select_backend?redirect_to=/" class="btn btn-flat"><i class="material-icons left" aria-hidden="true">train</i>IRIS</a>
-							% }
+							<a href="/account/select_backend?redirect_to=/" class="btn btn-flat"><i class="material-icons left" aria-hidden="true"><%= $user->{backend_hafas} ? 'directions' : 'train' %></i><%= $user->{backend_name} // 'IRIS' %></a>
 							<button class="btn right waves-effect waves-light btn-flat" type="submit" name="action" value="departures">
 								<i class="material-icons left" aria-hidden="true">send</i>
 								Abfahrten
@@ -111,7 +107,7 @@
 					<li>Statistiken über Reisezeiten und Verspätungen</li>
 					<li>Unterstützung beim Ausfüllen von Fahrgastrechteformularen</li>
 					<li>Optional: Öffentlicher Reisestatus und öffentliche Angaben zu vergangenen Fahrten</li>
-					<li>Optional: Verknüpfung mit Träwelling</li>
+					<!-- <li>Optional: Verknüpfung mit Träwelling</li> -->
 				</ul>
 			</p>
 			<p>

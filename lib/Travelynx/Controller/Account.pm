@@ -1066,7 +1066,12 @@ sub backend_form {
 		if ( $backend->{iris} ) {
 			$type                = 'IRIS-TTS';
 			$backend->{name}     = 'IRIS';
-			$backend->{longname} = 'Deutsche Bahn (IRIS-TTS)';
+			$backend->{longname} = 'Deutsche Bahn: IRIS-TTS';
+			$backend->{homepage} = 'https://www.bahn.de';
+		}
+		elsif ( $backend->{dbris} ) {
+			$type                = 'DBRIS';
+			$backend->{longname} = 'Deutsche Bahn: bahn.de';
 			$backend->{homepage} = 'https://www.bahn.de';
 		}
 		elsif ( $backend->{hafas} ) {
@@ -1075,6 +1080,7 @@ sub backend_form {
 			# operational and are thus useless for travelynx
 			if (   $backend->{name} eq 'Resrobot'
 				or $backend->{name} eq 'TPG'
+				or $backend->{name} eq 'VRN'
 				or $backend->{name} eq 'DB' )
 			{
 				$type = undef;
@@ -1134,16 +1140,9 @@ sub backend_form {
 		$backend->{type} = $type;
 	}
 
-	# These backends lack a journey endpoint and are useless for travelynx
-	@backends
-	  = grep { $_->{name} ne 'Resrobot' and $_->{name} ne 'TPG' } @backends;
-
-	my $iris = shift @backends;
-
-	@backends
-	  = sort { $a->{name} cmp $b->{name} } grep { $_->{type} } @backends;
-
-	unshift( @backends, $iris );
+	@backends = map { $_->[1] }
+	  sort { $a->[0] cmp $b->[0] }
+	  map { [ lc( $_->{name} ), $_ ] } grep { $_->{type} } @backends;
 
 	$self->render(
 		'select_backend',
