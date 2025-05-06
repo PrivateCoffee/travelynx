@@ -29,7 +29,7 @@ sub new {
 
 	$opt{header}
 	  = { 'User-Agent' =>
-"travelynx/${version} on $opt{root_url} +https://finalrewind.org/projects/travelynx"
+"travelynx/${version} on $opt{root_url} +https://git.private.coffee/PrivateCoffee/travelynx",
 	  };
 
 	return bless( \%opt, $class );

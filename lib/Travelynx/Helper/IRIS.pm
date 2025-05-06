@@ -58,9 +58,7 @@ sub get_departures {
 			lookahead   => $lookbehind + $lookahead,
 			lwp_options => {
 				timeout => 10,
-				agent   => 'travelynx/'
-				  . $self->{version}
-				  . ' +https://travelynx.de',
+				agent   => "travelynx/${version} on $opt{root_url} +https://git.private.coffee/PrivateCoffee/travelynx",
 			},
 			with_related => $with_related,
 		);
