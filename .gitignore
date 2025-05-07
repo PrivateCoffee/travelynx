@@ -58,6 +58,7 @@ Session.vim
 # Temporary
 .netrwhist
 *~
+/output
 # Auto-generated tag files
 tags
 # Persistent undo

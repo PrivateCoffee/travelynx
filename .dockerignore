@@ -1,5 +1,6 @@
 Dockerfile
 .dockerignore
 .gitignore
+/output
 README.md
 travelynx.conf
