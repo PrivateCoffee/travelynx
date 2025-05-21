@@ -2295,7 +2295,14 @@ sub add_journey_form {
 
 		$opt{db}         = $db;
 		$opt{uid}        = $self->current_user->{id};
-		$opt{backend_id} = 1;
+
+		my $backend_id = $self->param('backend_id') // 1;
+		my @valid_backends = map { $_->{id} } $self->stations->get_backends;
+		if (not grep { $_ == $backend_id } @valid_backends) {
+			$backend_id = $self->current_user->{backend_id} // 1;
+		}
+		
+		$opt{backend_id} = $backend_id;
 
 		my ( $journey_id, $error ) = $self->journeys->add(%opt);
 

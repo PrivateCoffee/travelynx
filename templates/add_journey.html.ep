@@ -1,3 +1,10 @@
+<script>
+	document.addEventListener('DOMContentLoaded', function() {
+		var elems = document.querySelectorAll('select');
+		M.FormSelect.init(elems);
+	});
+</script>
+
 <h1>Fahrt eingeben</h1>
 % if (not journeys->get_oldest_ts(uid => current_user->{id})) {
 	<div class="row">
@@ -7,9 +14,7 @@
 					<span class="card-title">Hinweis</span>
 					<p>travelynx ist darauf ausgelegt, über die Hauptseite in
 						Echtzeit in Verkehrsmittel ein- und auszuchecken. Die manuelle
-						Eingabe von Fahrten ist nur als Notlösung vorgesehen.
-						Hier werden derzeit nur Zugfahrten im DB-Netz
-						(IRIS-Backend) unterstützt.</p>
+						Eingabe von Fahrten ist nur als Notlösung vorgesehen.</p>
 				</div>
 			</div>
 		</div>
@@ -39,6 +44,19 @@
 </div>
 %= form_for '/journey/add' => (method => 'POST') => begin
 	%= csrf_field
+	<div class="row">
+		<div class="input-field col s12 m6 l6">
+			<select name="backend_id" id="backend_id">
+			% my $default_backend = current_user()->{backend_id} // 1;
+			% for my $backend (stations->get_backends) {
+				<option value="<%= $backend->{id} %>" <%== $backend->{id} == $default_backend ? 'selected' : '' %>>
+				<%= $backend->{name} %>
+				</option>
+			% }
+			</select>
+			<label for="backend_id">Backend</label>
+		</div>
+	</div>
 	<div class="row">
 		<div class="input-field col s12 m6 l6">
 			%= text_field 'train', id => 'train', class => 'validate', required => undef, pattern => '[0-9a-zA-Z]+ +[0-9a-zA-Z]* *[0-9]+'
