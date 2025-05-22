@@ -47,6 +47,8 @@ sub get_departures {
 
 	if ( @station_matches == 1 ) {
 		$station = $station_matches[0][2];
+		my $version = $opt{version};
+		my $root_url = $opt{root_url};
 		my $status = Travel::Status::DE::IRIS->new(
 			station        => $station,
 			main_cache     => $self->{main_cache},
@@ -58,7 +60,7 @@ sub get_departures {
 			lookahead   => $lookbehind + $lookahead,
 			lwp_options => {
 				timeout => 10,
-				agent   => "travelynx/${version} on $opt{root_url} +https://git.private.coffee/PrivateCoffee/travelynx",
+				agent   => "travelynx/${version} on ${root_url} +https://git.private.coffee/PrivateCoffee/travelynx",
 			},
 			with_related => $with_related,
 		);
@@ -130,7 +132,7 @@ sub get_departures_p {
 				timeout => 10,
 				agent   => 'travelynx/'
 				  . $self->{version}
-				  . ' +https://travelynx.de',
+				  . ' +https://git.private.coffee/PrivateCoffee/travelynx',
 			},
 			with_related => $with_related,
 			promise      => 'Mojo::Promise',
