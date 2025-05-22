@@ -23,11 +23,13 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          if git diff --quiet HEAD upstream/main; then
+          # Compare your main branch with upstream/main
+          DIFF_COUNT=$(git rev-list --count main..upstream/main)
+          if [ "$DIFF_COUNT" -eq "0" ]; then
             echo "No changes detected"
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
-            echo "Changes detected"
+            echo "Found $DIFF_COUNT new commits"
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
           
