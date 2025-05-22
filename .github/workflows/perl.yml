@@ -11,6 +11,7 @@ on:
 jobs:
   perl:
     strategy:
+      max-parallel: 1
       matrix:
         perl-version:
           - '5.30-buster'
