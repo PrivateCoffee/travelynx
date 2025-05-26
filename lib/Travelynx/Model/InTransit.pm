@@ -356,6 +356,7 @@ sub postprocess {
 	$ret->{route_after}        = \@route_after;
 	$ret->{extra_data}         = $ret->{data};
 	$ret->{comment}            = $ret->{user_data}{comment};
+	$ret->{wagongroups}        = $ret->{user_data}{wagongroups};
 
 	$ret->{platform_type} = 'Gleis';
 	if ( $ret->{train_type} =~ m{ ast | bus | ruf }ix ) {
@@ -391,7 +392,7 @@ sub postprocess {
 		  = $dep_info->{rt_arr}->epoch - $epoch;
 	}
 
-	for my $station (@route_after) {
+	for my $station (@route) {
 		if ( @{$station} > 1 ) {
 
 			# Note: $station->[2]{sched_arr} may already have been
