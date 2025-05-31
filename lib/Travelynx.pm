@@ -1478,7 +1478,17 @@ sub startup {
 							and $wr
 							and not exists $wagonorder->{error} )
 						{
+							my $dt
+							  = $opt{datetime}->clone->set_time_zone('UTC');
 							$data->{wagonorder_dep}   = $wagonorder;
+							$data->{wagonorder_param} = {
+								time      => $dt->rfc3339 =~ s{(?=Z)}{.000}r,
+								number    => $opt{train_no},
+								evaNumber => $opt{eva},
+								administrationId => 80,
+								date             => $dt->strftime('%Y-%m-%d'),
+								category         => $opt{train_type},
+							};
 							$user_data->{wagongroups} = [];
 							for my $group ( $wr->groups ) {
 								my @wagons;
@@ -1890,6 +1900,7 @@ sub startup {
 				uid             => $uid,
 				db              => $db,
 				with_data       => 1,
+				with_polyline   => 1,
 				with_timestamps => 1,
 				with_visibility => 1,
 				postprocess     => 1,
@@ -2320,12 +2331,12 @@ sub startup {
 
 			my @stations = uniq_by { $_->{name} } map {
 				{
-					name   => $_->{to_name},
-					latlon => $_->{to_latlon}
+					name   => $_->{to_name}   // $_->{arr_name},
+					latlon => $_->{to_latlon} // $_->{arr_latlon},
 				},
 				  {
-					name   => $_->{from_name},
-					latlon => $_->{from_latlon}
+					name   => $_->{from_name}   // $_->{dep_name},
+					latlon => $_->{from_latlon} // $_->{dep_latlon}
 				  }
 			} @journeys;
 
@@ -2350,8 +2361,8 @@ sub startup {
 
 			for my $journey (@polyline_journeys) {
 				my @polyline = @{ $journey->{polyline} };
-				my $from_eva = $journey->{from_eva};
-				my $to_eva   = $journey->{to_eva};
+				my $from_eva = $journey->{from_eva} // $journey->{dep_eva};
+				my $to_eva   = $journey->{to_eva}   // $journey->{arr_eva};
 
 				my $from_index
 				  = first_index { $_->[2] and $_->[2] == $from_eva } @polyline;
@@ -2387,7 +2398,7 @@ sub startup {
 					or $to_index == -1 )
 				{
 					# Fall back to route
-					delete $journey->{polyline};
+					push( @beeline_journeys, $journey );
 					next;
 				}
 
@@ -2409,6 +2420,9 @@ sub startup {
 				  . ( $to_index - $from_index );
 				$seen{$key} = 1;
 
+				if ( $from_index > $to_index ) {
+					( $to_index, $from_index ) = ( $from_index, $to_index );
+				}
 				@polyline = @polyline[ $from_index .. $to_index ];
 				my @polyline_coords;
 				for my $coord (@polyline) {
@@ -2422,13 +2436,19 @@ sub startup {
 				my @route = @{ $journey->{route} };
 
 				my $from_index = first_index {
-					( $_->[1] and $_->[1] == $journey->{from_eva} )
-					  or $_->[0] eq $journey->{from_name}
+					(         $_->[1]
+						  and $_->[1]
+						  == ( $journey->{from_eva} // $journey->{dep_eva} ) )
+					  or $_->[0] eq
+					  ( $journey->{from_name} // $journey->{dep_name} )
 				}
 				@route;
 				my $to_index = first_index {
-					( $_->[1] and $_->[1] == $journey->{to_eva} )
-					  or $_->[0] eq $journey->{to_name}
+					(         $_->[1]
+						  and $_->[1]
+						  == ( $journey->{to_eva} // $journey->{arr_eva} ) )
+					  or $_->[0] eq
+					  ( $journey->{to_name} // $journey->{arr_name} )
 				}
 				@route;
 
@@ -2436,15 +2456,15 @@ sub startup {
 					my $rename = $self->app->renamed_station;
 					$from_index = first_index {
 						( $rename->{ $_->[0] } // $_->[0] ) eq
-						  $journey->{from_name}
+						  ( $journey->{from_name} // $journey->{dep_name} )
 					}
 					@route;
 				}
 				if ( $to_index == -1 ) {
 					my $rename = $self->app->renamed_station;
 					$to_index = first_index {
-						( $rename->{ $_->[0] } // $_->[0] ) eq
-						  $journey->{to_name}
+						( $rename->{ $_->[0] }  // $_->[0] ) eq
+						  ( $journey->{to_name} // $journey->{arr_name} )
 					}
 					@route;
 				}
@@ -2467,7 +2487,8 @@ sub startup {
 				# and entered manually (-> beeline also shown on map, typically
 				# significantly differs from detailed route) -- unless the user
 				# sets include_manual, of course.
-				if (    $journey->{edited} & 0x0010
+				if (    $journey->{edited}
+					and $journey->{edited} & 0x0010
 					and @route <= 2
 					and not $include_manual )
 				{
