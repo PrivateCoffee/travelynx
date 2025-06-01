@@ -68,7 +68,7 @@
 					% }
 					% if (my $wr = $journey->{wagonorder}) {
 						<br/>
-						<!-- <a href="https://dbf.finalrewind.org/carriage-formation?<%= $journey->{train_no} %>/<%= $journey->{sched_departure}->strftime('%Y%m%d%H%M') %>?e=<%= $journey->{dep_direction} // q{} %>"> -->
+						<a href="https://dbf.finalrewind.org/carriage-formation?<%= join('&', map { $_ . '=' . $journey->{extra_data}{wagonorder_param}{$_} } sort keys %{$journey->{extra_data}{wagonorder_param}}) %>&amp;e=<%= $journey->{dep_direction} // q{} %>">
 							% my $direction = $wr->direction == 100 ? '→' : '←';
 							% my $rev = 0;
 							% if ($journey->{dep_direction}) {
@@ -111,7 +111,7 @@
 								% }
 							% }
 							%= $direction
-						<!-- </a> -->
+						</a>
 					% }
 				</div>
 				<div class="progress" style="height: 1ex;">
@@ -321,9 +321,10 @@
 	% if (@{stash('timeline') // []}) {
 		%= include '_timeline_link', timeline => stash('timeline'), from_checkin => 1
 	% }
-	% if ($journey->{arr_name}) {
+	% if ($journey->{arr_name} and @{$journey->{extra_data}{him_msg} // []}) {
 		<div class="card" style="margin-top: <%= scalar @{stash('timeline') // []} ? '1.5rem' : '3em' %>;">
 			<div class="card-content">
+				<i class="material-icons small right sync-failed-marker grey-text" style="display: none;">sync_problem</i>
 				<span class="card-title">Meldungen</span>
 				% if (@{$journey->{extra_data}{him_msg} // []}) {
 					<p style="margin-bottom: 2ex;">
@@ -349,30 +350,18 @@
 					</p>
 				% }
 			</div>
-			<div class="card-action">
-				% my $url = 'https://dbf.finalrewind.org/z/';
-				% if ($journey->{is_dbris}) {
-					% $url .= $journey->{train_id} =~ s{#}{%23}gr . '?dbris=' . $journey->{backend_name};
-					<a style="margin-right: 0;" href="<%= $url %>"><i class="material-icons left" aria-hidden="true">timeline</i> Details</a>
-				% }
-				% elsif ($journey->{is_hafas}) {
-					% $url .= $journey->{train_id} =~ s{#}{%23}gr . '?hafas=' . $journey->{backend_name};
-					<a style="margin-right: 0;" href="<%= $url %>"><i class="material-icons left" aria-hidden="true">timeline</i> Details</a>
-				% }
-				% elsif ($journey->{extra_data}{trip_id} and not $journey->{is_dbris}) {
-					% $url .= $journey->{extra_data}{trip_id} =~ s{#}{%23}gr;
-					<a style="margin-right: 0;" href="<%= $url %>"><i class="material-icons left" aria-hidden="true">timeline</i> Zuglauf</a>
-				% }
-				% else {
-					&nbsp;
-				% }
-				% if ($journey->{extra_data}{trip_id}) {
-					<a class="right" style="margin-right: 0;" href="https://dbf.finalrewind.org/map/<%= $journey->{extra_data}{trip_id} =~ s{#}{%23}gr %>/<%= $journey->{train_line} || 0 %>?<%= $journey->{is_hafas} ? 'hafas' : 'dbris' %>=<%= $journey->{backend_name} // 'ÖBB' %>&amp;from=<%= $journey->{dep_name} %>&amp;to=<%= $journey->{arr_name} %>"><i class="material-icons left" aria-hidden="true">map</i> Karte</a>
-				% }
-			</div>
 		</div>
 	% }
 	% if ($journey->{arr_name}) {
+		<div class="card" style="margin-top: 3em;">
+			<div class="card-content">
+				<i class="material-icons small right sync-failed-marker grey-text" style="display: none;">sync_problem</i>
+				<span class="card-title">Karte</span>
+				<div id="map" style="height: 70vh;">
+				</div>
+				%= include '_map', with_map_header => 0, station_coordinates => stash('station_coordinates'), polyline_groups => stash('polyline_groups')
+			</div>
+		</div>
 		<div class="card" style="margin-top: 3em;">
 			<div class="card-content">
 				<i class="material-icons small right sync-failed-marker grey-text" style="display: none;">sync_problem</i>

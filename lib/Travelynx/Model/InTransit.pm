@@ -12,11 +12,12 @@ use DateTime;
 use JSON;
 
 my %visibility_itoa = (
-	100 => 'public',
-	80  => 'travelynx',
-	60  => 'followers',
-	30  => 'unlisted',
-	10  => 'private',
+	100     => 'public',
+	80      => 'travelynx',
+	60      => 'followers',
+	30      => 'unlisted',
+	10      => 'private',
+	default => 'default',
 );
 
 my %visibility_atoi = (
@@ -104,6 +105,7 @@ sub add {
 	my $persistent_data;
 
 	my $json = JSON->new;
+	my $now  = DateTime->now( time_zone => 'Europe/Berlin' );
 
 	if ($train) {
 
@@ -115,16 +117,16 @@ sub add {
 				cancelled => $train->departure_is_cancelled ? 1
 				: 0,
 				checkin_station_id => $checkin_station_id,
-				checkin_time => DateTime->now( time_zone => 'Europe/Berlin' ),
-				dep_platform => $train->platform,
-				train_type   => $train->type,
-				train_line   => $train->line_no,
-				train_no     => $train->train_no,
-				train_id     => $train->train_id,
-				sched_departure => $train->sched_departure,
-				real_departure  => $train->departure,
-				route           => $json->encode($route),
-				messages        => $json->encode(
+				checkin_time       => $now,
+				dep_platform       => $train->platform,
+				train_type         => $train->type,
+				train_line         => $train->line_no,
+				train_no           => $train->train_no,
+				train_id           => $train->train_id,
+				sched_departure    => $train->sched_departure,
+				real_departure     => $train->departure,
+				route              => $json->encode($route),
+				messages           => $json->encode(
 					[ map { [ $_->[0]->epoch, $_->[1] ] } $train->messages ]
 				),
 				data => JSON->new->encode(
@@ -175,16 +177,16 @@ sub add {
 				? 1
 				: 0,
 				checkin_station_id => $stop->loc->eva,
-				checkin_time => DateTime->now( time_zone => 'Europe/Berlin' ),
-				dep_platform => $stop->{platform},
-				train_type   => $product->type // q{},
-				train_line   => $product->line_no,
-				train_no     => $product->number // q{},
-				train_id     => $journey->id,
-				sched_departure => $stop->{sched_dep},
-				real_departure  => $stop->{rt_dep} // $stop->{sched_dep},
-				route           => $json->encode( \@route ),
-				data            => JSON->new->encode(
+				checkin_time       => $now,
+				dep_platform       => $stop->{platform},
+				train_type         => $product->type // q{},
+				train_line         => $product->line_no,
+				train_no           => $product->number // q{},
+				train_id           => $journey->id,
+				sched_departure    => $stop->{sched_dep},
+				real_departure     => $stop->{rt_dep} // $stop->{sched_dep},
+				route              => $json->encode( \@route ),
+				data               => JSON->new->encode(
 					{
 						rt => $stop->{rt_dep} ? 1 : 0,
 						%{ $data // {} }
@@ -260,16 +262,16 @@ sub add {
 				? 1
 				: 0,
 				checkin_station_id => $stop->eva,
-				checkin_time => DateTime->now( time_zone => 'Europe/Berlin' ),
-				dep_platform => $stop->platform,
-				train_type   => $journey->type // q{},
-				train_line   => $line,
-				train_no     => $number,
-				train_id     => $data->{trip_id},
-				sched_departure => $stop->sched_dep,
-				real_departure  => $stop->rt_dep // $stop->sched_dep,
-				route           => $json->encode( \@route ),
-				data            => JSON->new->encode(
+				checkin_time       => $now,
+				dep_platform       => $stop->platform,
+				train_type         => $journey->type // q{},
+				train_line         => $line,
+				train_no           => $number,
+				train_id           => $data->{trip_id},
+				sched_departure    => $stop->sched_dep,
+				real_departure     => $stop->rt_dep // $stop->sched_dep,
+				route              => $json->encode( \@route ),
+				data               => JSON->new->encode(
 					{
 						rt => $stop->{rt_dep} ? 1 : 0,
 						%{ $data // {} }
@@ -359,16 +361,14 @@ sub postprocess {
 	$ret->{wagongroups}        = $ret->{user_data}{wagongroups};
 
 	$ret->{platform_type} = 'Gleis';
-	if ( $ret->{train_type} =~ m{ ast | bus | ruf }ix ) {
+	if ( $ret->{train_type} and $ret->{train_type} =~ m{ ast | bus | ruf }ix ) {
 		$ret->{platform_type} = 'Steig';
 	}
 
 	$ret->{visibility_str}
-	  = $ret->{visibility}
-	  ? $visibility_itoa{ $ret->{visibility} }
-	  : 'default';
+	  = $visibility_itoa{ $ret->{visibility} // 'default' };
 	$ret->{effective_visibility_str}
-	  = $visibility_itoa{ $ret->{effective_visibility} };
+	  = $visibility_itoa{ $ret->{effective_visibility} // 'default' };
 
 	my @parsed_messages;
 	for my $message ( @{ $ret->{messages} // [] } ) {
@@ -460,7 +460,7 @@ sub get {
 
 	my $table = 'in_transit';
 
-	if ( $opt{with_timestamps} ) {
+	if ( $opt{with_timestamps} or $opt{with_polyline} ) {
 		$table = 'in_transit_str';
 	}
 
@@ -474,13 +474,16 @@ sub get {
 		$ret = $res->hash;
 	}
 
+	if ( $opt{with_polyline} and $ret ) {
+		$ret->{dep_latlon} = [ $ret->{dep_lat}, $ret->{dep_lon} ];
+		$ret->{arr_latlon} = [ $ret->{arr_lat}, $ret->{arr_lon} ];
+	}
+
 	if ( $opt{with_visibility} and $ret ) {
 		$ret->{visibility_str}
-		  = $ret->{visibility}
-		  ? $visibility_itoa{ $ret->{visibility} }
-		  : 'default';
+		  = $visibility_itoa{ $ret->{visibility} // 'default' };
 		$ret->{effective_visibility_str}
-		  = $visibility_itoa{ $ret->{effective_visibility} };
+		  = $visibility_itoa{ $ret->{effective_visibility} // 'default' };
 	}
 
 	if ( $opt{postprocess} and $ret ) {
