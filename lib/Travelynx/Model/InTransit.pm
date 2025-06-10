@@ -1,6 +1,7 @@
 package Travelynx::Model::InTransit;
 
 # Copyright (C) 2020-2025 Birte Kristina Friesel
+# Copyright (C) 2025 networkException <git@nwex.de>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
@@ -99,6 +100,7 @@ sub add {
 	my $train_suffix       = $opt{train_suffix};
 	my $journey            = $opt{journey};
 	my $stop               = $opt{stop};
+	my $stopover           = $opt{stopover};
 	my $checkin_station_id = $opt{departure_eva};
 	my $route              = $opt{route};
 	my $data               = $opt{data};
@@ -278,6 +280,61 @@ sub add {
 					}
 				),
 				user_data  => JSON->new->encode($persistent_data),
+				backend_id => $backend_id,
+			}
+		);
+	}
+	elsif ( $journey and $stopover ) {
+
+		# MOTIS
+		my @route;
+		for my $journey_stopover ( $journey->stopovers ) {
+			push(
+				@route,
+				[
+					$journey_stopover->stop->name,
+					$journey_stopover->stop->{eva}
+					  // die('eva not set for stopover'),
+					{
+						sched_arr =>
+						  _epoch( $journey_stopover->scheduled_arrival ),
+						sched_dep =>
+						  _epoch( $journey_stopover->scheduled_departure ),
+						rt_arr => _epoch( $journey_stopover->realtime_arrival ),
+						rt_dep =>
+						  _epoch( $journey_stopover->realtime_departure ),
+						arr_delay => $journey_stopover->arrival_delay,
+						dep_delay => $journey_stopover->departure_delay,
+						lat       => $journey_stopover->stop->lat,
+						lon       => $journey_stopover->stop->lon,
+					}
+				]
+			);
+		}
+
+		$db->insert(
+			'in_transit',
+			{
+				user_id   => $uid,
+				cancelled => $stopover->{is_cancelled}
+				? 1
+				: 0,
+				checkin_station_id => $stopover->stop->{eva},
+				checkin_time => DateTime->now( time_zone => 'Europe/Berlin' ),
+				dep_platform => $stopover->track,
+				train_type   => $journey->mode,
+				train_no     => q{},
+				train_id     => $journey->id,
+				train_line   => $journey->route_name,
+				sched_departure => $stopover->scheduled_departure,
+				real_departure  => $stopover->departure,
+				route           => $json->encode( \@route ),
+				data            => JSON->new->encode(
+					{
+						rt => $stopover->{is_realtime} ? 1 : 0,
+						%{ $data // {} }
+					}
+				),
 				backend_id => $backend_id,
 			}
 		);
@@ -887,6 +944,33 @@ sub update_departure_dbris {
 	);
 }
 
+sub update_departure_motis {
+	my ( $self, %opt ) = @_;
+	my $uid      = $opt{uid};
+	my $db       = $opt{db} // $self->{pg}->db;
+	my $dep_eva  = $opt{dep_eva};
+	my $arr_eva  = $opt{arr_eva};
+	my $journey  = $opt{journey};
+	my $stopover = $opt{stopover};
+	my $json     = JSON->new;
+
+	# selecting on user_id and train_no avoids a race condition if a user checks
+	# into a new train while we are fetching data for their previous journey. In
+	# this case, the new train would receive data from the previous journey.
+	$db->update(
+		'in_transit',
+		{
+			real_departure => $stopover->{realtime_departure},
+		},
+		{
+			user_id             => $uid,
+			train_id            => $opt{train_id},
+			checkin_station_id  => $dep_eva,
+			checkout_station_id => $arr_eva,
+		}
+	);
+}
+
 sub update_departure_hafas {
 	my ( $self, %opt ) = @_;
 	my $uid     = $opt{uid};
@@ -897,12 +981,20 @@ sub update_departure_hafas {
 	my $stop    = $opt{stop};
 	my $json    = JSON->new;
 
+	my $res_h = $db->select( 'in_transit', ['data'], { user_id => $uid } )
+	  ->expand->hash;
+	my $ephemeral_data = $res_h ? $res_h->{data} : {};
+	if ( $stop->{rt_dep} ) {
+		$ephemeral_data->{rt} = 1;
+	}
+
 	# selecting on user_id and train_no avoids a race condition if a user checks
 	# into a new train while we are fetching data for their previous journey. In
 	# this case, the new train would receive data from the previous journey.
 	$db->update(
 		'in_transit',
 		{
+			data           => $json->encode($ephemeral_data),
 			real_departure => $stop->{rt_dep},
 		},
 		{
@@ -1045,6 +1137,57 @@ sub update_arrival_dbris {
 	);
 }
 
+sub update_arrival_motis {
+	my ( $self, %opt ) = @_;
+	my $uid      = $opt{uid};
+	my $db       = $opt{db} // $self->{pg}->db;
+	my $dep_eva  = $opt{dep_eva};
+	my $arr_eva  = $opt{arr_eva};
+	my $journey  = $opt{journey};
+	my $stopover = $opt{stopover};
+	my $json     = JSON->new;
+
+	my @route;
+	for my $journey_stopover ( $journey->stopovers ) {
+		push(
+			@route,
+			[
+				$journey_stopover->stop->name,
+				$journey_stopover->stop->{eva}
+				  // die('eva not set for stopover'),
+				{
+					sched_arr => _epoch( $journey_stopover->scheduled_arrival ),
+					sched_dep =>
+					  _epoch( $journey_stopover->scheduled_departure ),
+					rt_arr => _epoch( $journey_stopover->realtime_arrival ),
+					rt_dep => _epoch( $journey_stopover->realtime_departure ),
+					arr_delay => $journey_stopover->arrival_delay,
+					dep_delay => $journey_stopover->departure_delay,
+					lat       => $journey_stopover->stop->lat,
+					lon       => $journey_stopover->stop->lon,
+				}
+			]
+		);
+	}
+
+	# selecting on user_id and train_no avoids a race condition if a user checks
+	# into a new train while we are fetching data for their previous journey. In
+	# this case, the new train would receive data from the previous journey.
+	$db->update(
+		'in_transit',
+		{
+			real_arrival => $stopover->{realtime_arrival},
+			route        => $json->encode( [@route] ),
+		},
+		{
+			user_id             => $uid,
+			train_id            => $opt{train_id},
+			checkin_station_id  => $dep_eva,
+			checkout_station_id => $arr_eva,
+		}
+	);
+}
+
 sub update_arrival_hafas {
 	my ( $self, %opt ) = @_;
 	my $uid     = $opt{uid};
@@ -1054,6 +1197,16 @@ sub update_arrival_hafas {
 	my $journey = $opt{journey};
 	my $stop    = $opt{stop};
 	my $json    = JSON->new;
+
+	my $res_h
+	  = $db->select( 'in_transit', [ 'data', 'route' ], { user_id => $uid } )
+	  ->expand->hash;
+	my $ephemeral_data = $res_h ? $res_h->{data}  : {};
+	my $old_route      = $res_h ? $res_h->{route} : [];
+
+	if ( $stop->{rt_arr} ) {
+		$ephemeral_data->{rt} = 1;
+	}
 
 	my @route;
 	for my $j_stop ( $journey->route ) {
@@ -1080,10 +1233,6 @@ sub update_arrival_hafas {
 		}
 	}
 
-	my $res_h = $db->select( 'in_transit', ['route'], { user_id => $uid } )
-	  ->expand->hash;
-	my $old_route = $res_h ? $res_h->{route} : [];
-
 	for my $i ( 0 .. $#route ) {
 		if ( $old_route->[$i] and $old_route->[$i][1] == $route[$i][1] ) {
 			for my $k (qw(rt_arr rt_dep arr_delay dep_delay)) {
@@ -1098,6 +1247,7 @@ sub update_arrival_hafas {
 	$db->update(
 		'in_transit',
 		{
+			data         => $json->encode($ephemeral_data),
 			real_arrival => $stop->{rt_arr},
 			route        => $json->encode( [@route] ),
 		},
