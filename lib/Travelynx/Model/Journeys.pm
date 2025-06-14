@@ -549,7 +549,7 @@ sub get {
 
 	my @select
 	  = (
-		qw(journey_id is_dbris is_iris is_hafas backend_name backend_id train_type train_line train_no checkin_ts sched_dep_ts real_dep_ts dep_eva dep_ds100 dep_name dep_lat dep_lon checkout_ts sched_arr_ts real_arr_ts arr_eva arr_ds100 arr_name arr_lat arr_lon cancelled edited route messages user_data visibility effective_visibility)
+		qw(journey_id is_dbris is_iris is_hafas is_motis backend_name backend_id train_type train_line train_no checkin_ts sched_dep_ts real_dep_ts dep_eva dep_ds100 dep_name dep_lat dep_lon checkout_ts sched_arr_ts real_arr_ts arr_eva arr_ds100 arr_name arr_lat arr_lon cancelled edited route messages user_data visibility effective_visibility)
 	  );
 	my %where = (
 		user_id   => $uid,
@@ -610,6 +610,7 @@ sub get {
 			is_dbris             => $entry->{is_dbris},
 			is_iris              => $entry->{is_iris},
 			is_hafas             => $entry->{is_hafas},
+			is_motis             => $entry->{is_motis},
 			backend_name         => $entry->{backend_name},
 			backend_id           => $entry->{backend_id},
 			type                 => $entry->{train_type},
@@ -871,8 +872,11 @@ sub get_latest_checkout_stations {
 	my $res = $db->select(
 		'journeys_str',
 		[
-			'arr_name',     'arr_eva',  'train_id', 'backend_id',
-			'backend_name', 'is_dbris', 'is_hafas'
+			'arr_name',        'arr_eva',
+			'arr_external_id', 'train_id',
+			'backend_id',      'backend_name',
+			'is_dbris',        'is_hafas',
+			'is_motis'
 		],
 		{
 			user_id   => $uid,
@@ -894,10 +898,13 @@ sub get_latest_checkout_stations {
 		push(
 			@ret,
 			{
-				name       => $row->{arr_name},
-				eva        => $row->{arr_eva},
+				name               => $row->{arr_name},
+				eva                => $row->{arr_eva},
+				external_id_or_eva => $row->{arr_external_id}
+				  // $row->{arr_eva},
 				dbris      => $row->{is_dbris} ? $row->{backend_name} : 0,
 				hafas      => $row->{is_hafas} ? $row->{backend_name} : 0,
+				motis      => $row->{is_motis} ? $row->{backend_name} : 0,
 				backend_id => $row->{backend_id},
 			}
 		);
@@ -1665,7 +1672,10 @@ sub compute_stats {
 					@inconsistencies,
 					{
 						conflict => {
-							train => $journey->{type} . ' '
+							train => (
+								$journey->{is_motis} ? '' : $journey->{type}
+							  )
+							  . ' '
 							  . ( $journey->{line} // $journey->{no} ),
 							arr => epoch_to_dt( $journey->{rt_arr_ts} )
 							  ->strftime('%d.%m.%Y %H:%M'),
@@ -1691,7 +1701,8 @@ sub compute_stats {
 		$next_departure = $journey->{rt_dep_ts};
 		$next_id        = $journey->{id};
 		$next_train
-		  = $journey->{type} . ' ' . ( $journey->{line} // $journey->{no} ),;
+		  = ( $journey->{is_motis} ? '' : $journey->{type} ) . ' '
+		  . ( $journey->{line} // $journey->{no} ),;
 	}
 	my $ret = {
 		km_route             => $km_route,
