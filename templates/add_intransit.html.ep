@@ -1,25 +1,4 @@
-<script>
-	document.addEventListener('DOMContentLoaded', function() {
-		var elems = document.querySelectorAll('select');
-		M.FormSelect.init(elems);
-	});
-</script>
-
-<h1>Fahrt eingeben</h1>
-% if (not journeys->get_oldest_ts(uid => current_user->{id})) {
-	<div class="row">
-		<div class="col s12">
-			<div class="card info-color">
-				<div class="card-content">
-					<span class="card-title">Hinweis</span>
-					<p>travelynx ist darauf ausgelegt, über die Hauptseite in
-						Echtzeit in Verkehrsmittel ein- und auszuchecken. Die manuelle
-						Eingabe von Fahrten ist nur als Notlösung vorgesehen.</p>
-				</div>
-			</div>
-		</div>
-	</div>
-% }
+<h1>Manuell einchecken</h1>
 % if ($error) {
 	<div class="row">
 		<div class="col s12">
@@ -34,6 +13,10 @@
 % }
 <div class="row">
 	<div class="col s12">
+		<p>
+			Falls die gesuchte Abfahrt nicht vom ausgewählten Backend verfügbar ist, z.B. da es sich um eine Sonderfahrt handelt, ist hier ein manueller Checkin möglich.
+			Nach dem Checkin werden alle Daten so beibehalten wie sie eingegeben wurden; Änderungen sind erst nach dem Auschecken möglich.
+		</p>
 		<ul>
 			<li>Eingabe der Fahrt als „Typ Linie Nummer“ oder „Typ Nummer“, z.B.
 				„ICE 100“, „S 1 31133“ oder „ABR RE11 26720“</li>
@@ -45,40 +28,20 @@
 </div>
 <div class="row">
 	<div class="col s12 center-align">
-		% my $self_link = url_for('add_journey');
 		% if (current_user->{backend_id}) {
-			<a href="/account/select_backend?redirect_to=<%= $self_link %>" class="btn-small btn-flat"><i class="material-icons left" aria-hidden="true">directions</i><%= current_user->{backend_name} %></a>
+			<a href="/account/select_backend?redirect_to=/checkin/add" class="btn-small btn-flat"><i class="material-icons left" aria-hidden="true">directions</i><%= current_user->{backend_name} %></a>
 		% }
 		% else {
-			<a href="/account/select_backend?redirect_to=<%= $self_link %>" class="btn-small btn-flat"><i class="material-icons left" aria-hidden="true">train</i>IRIS</a>
+			<a href="/account/select_backend?redirect_to=/checkin/add" class="btn-small btn-flat"><i class="material-icons left" aria-hidden="true">train</i>IRIS</a>
 		% }
 	</div>
 </div>
-%= form_for '/journey/add' => (method => 'POST') => begin
+%= form_for '/checkin/add' => (method => 'POST') => begin
 	%= csrf_field
 	<div class="row">
-		<div class="input-field col s12 m6 l6">
-			<select name="backend_id" id="backend_id">
-			% my $default_backend = current_user()->{backend_id} // 1;
-			% for my $backend (stations->get_backends) {
-				<option value="<%= $backend->{id} %>" <%== $backend->{id} == $default_backend ? 'selected' : '' %>>
-				<%= $backend->{name} %>
-				</option>
-			% }
-			</select>
-			<label for="backend_id">Backend</label>
-		</div>
-	</div>
-	<div class="row">
-		<div class="input-field col s12 m6 l6">
+		<div class="input-field col s12">
 			%= text_field 'train', id => 'train', class => 'validate', required => undef, pattern => '[0-9a-zA-Z]+ +[0-9a-zA-Z]* *[0-9]+'
 			<label for="train">Fahrt (Typ Linie Nummer)</label>
-		</div>
-		<div class="input-field col s12 m6 l6">
-			<label>
-				%= check_box cancelled => 1
-				<span>Fahrt ist ausgefallen</span>
-			</label>
 		</div>
 	</div>
 	<div class="row">
@@ -90,10 +53,6 @@
 			%= text_field 'sched_departure', id => 'sched_departure', class => 'validate', required => undef, pattern => '[0-9][0-9]?[.][0-9][0-9]?[.][0-9][0-9][0-9][0-9] +[0-9][0-9]:[0-9][0-9]'
 			<label for="sched_departure">Geplante Abfahrt</label>
 		</div>
-		<div class="input-field col s12">
-			%= text_field 'rt_departure', id => 'rt_departure', class => 'validate', pattern => '[0-9][0-9]?[.][0-9][0-9]?[.][0-9][0-9][0-9][0-9] +[0-9][0-9]:[0-9][0-9]'
-			<label for="rt_departure">Tatsächliche Abfahrt (wenn leer: pünktlich)</label>
-		</div>
 	</div>
 	<div class="row">
 		<div class="input-field col s12">
@@ -103,10 +62,6 @@
 		<div class="input-field col s12">
 			%= text_field 'sched_arrival', id => 'sched_arrival', class => 'validate', required => undef, pattern => '[0-9][0-9]?[.][0-9][0-9]?[.][0-9][0-9][0-9][0-9] +[0-9][0-9]:[0-9][0-9]'
 			<label for="sched_arrival">Geplante Ankunft</label>
-		</div>
-		<div class="input-field col s12">
-			%= text_field 'rt_arrival', id => 'rt_arrival', class => 'validate', pattern => '[0-9][0-9]?[.][0-9][0-9]?[.][0-9][0-9][0-9][0-9] +[0-9][0-9]:[0-9][0-9]'
-			<label for="rt_arrival">Tatsächliche Ankunft (wenn leer: pünktlich)</label>
 		</div>
 	</div>
 	<div class="row">
@@ -128,7 +83,7 @@
 		</div>
 		<div class="col s6 m6 l6 center-align">
 			<button class="btn waves-effect waves-light" type="submit" name="action" value="save">
-				Hinzufügen
+				Einchecken
 				<i class="material-icons right">send</i>
 			</button>
 		</div>

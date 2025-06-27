@@ -18,8 +18,8 @@
 		</li>
 	% }
 	<li class="collection-item <%= $link_class %> <%= $row_class %>"
-		data-hafas="<%= $hafas %>"
-		data-station="<%= $result->station_eva %>"
+		data-efa="<%= $efa %>"
+		data-station="<%= $result->stop_id_num %>"
 		data-train="<%= $result->id %>"
 		data-ts="<%= ($result->sched_datetime // $result->datetime)->epoch %>"
 	>
@@ -32,7 +32,7 @@
 				<i class="material-icons" aria-label="Keine Echtzeitdaten vorhanden" style="font-size: 16px;">gps_off</i>
 			% }
 		</a>
-		<span class="dep-line <%= $result->type // q{} %>">
+		<span class="dep-line <%= ($result->type // q{}) =~ tr{a-zA-Z_-}{}cdr %>">
 			%= $result->line
 		</span>
 		<span class="dep-dest">
@@ -41,18 +41,14 @@
 			% }
 			% else {
 				%= $result->destination
-				% if ($result->load and $result->load->{SECOND}) {
-					% my ($first, $second) = load_icon($result->load);
-					% if ($first ne 'help_outline') {
-						<i class="material-icons tiny" aria-hidden="true"><%= $first %></i>
-					% }
-					<i class="material-icons tiny" aria-hidden="true"><%= $second %></i>
-				% }
 				% for my $checkin (@{$checkin_by_train->{$result->id} // []}) {
 					<span class="followee-checkin">
 						<i class="material-icons tiny" aria-label="Eine Person, der du folgst, ist hier eingecheckt">people</i>
 						<%= $checkin->{followee_name} %> → <%= $checkin->{arr_name} // '???' %>
 					</span>
+				% }
+				% if ($result->occupancy) {
+					<i class="material-icons tiny" aria-hidden="true"><%= efa_load_icon($result->occupancy) %></i>
 				% }
 			% }
 		</span>

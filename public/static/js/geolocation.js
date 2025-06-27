@@ -24,7 +24,9 @@ $(document).ready(function() {
 			const res = $(document.createElement('p'));
 			$.each(stops, function(i, stop) {
 				const parts = stop.split(';');
-				const node = $('<a class="tablerow" href="/s/' + parts[0] + '?dbris=' + parts[2] + '&amp;hafas=' + parts[3] + '"><span><i class="material-icons" aria-hidden="true">' + (parts[2] == '0' ? 'train' : 'directions') + '</i>' + parts[1] + '</span></a>');
+				const [ eva, name, dbris, efa, hafas, motis ] = parts;
+
+				const node = $('<a class="tablerow" href="/s/' + eva + '?dbris=' + (dbris||0) + '&amp;efa=' + (efa||0) + '&amp;hafas=' + (hafas||0) + '&amp;motis=' + (motis||0) + '"><span><i class="material-icons" aria-hidden="true">' + (!(dbris||efa||hafas||motis) ? 'train' : 'directions') + '</i>' + name + '</span></a>');
 				node.click(function() {
 					$('nav .preloader-wrapper').addClass('active');
 				});
@@ -45,13 +47,40 @@ $(document).ready(function() {
 		} else {
 			const res = $(document.createElement('p'));
 			$.each(data.candidates, function(i, candidate) {
+				let node;
 
-				const eva = candidate.eva,
-					name = candidate.name,
-					hafas = candidate.hafas,
-					distance = candidate.distance.toFixed(1);
+				if (candidate.dbris) {
+					const eva = candidate.eva,
+						name = candidate.name,
+						dbris = candidate.dbris,
+						distance = candidate.distance.toFixed(1);
+					node = $('<a class="tablerow" href="/s/' + eva + '?dbris=' + dbris + '"><span><i class="material-icons" aria-hidden="true">directions</i>' + name + '</span></a>');
+				} else if (candidate.efa) {
+					const eva = candidate.eva,
+						name = candidate.name,
+						efa = candidate.efa,
+						distance = candidate.distance.toFixed(1);
 
-				const node = $('<a class="tablerow" href="/s/' + eva + '?hafas=' + hafas + '"><span><i class="material-icons" aria-hidden="true">' + (hafas == '0' ? 'train' : 'directions') + '</i>' + name + '</span></a>');
+					node = $('<a class="tablerow" href="/s/' + eva + '?efa=' + efa + '"><span><i class="material-icons" aria-hidden="true">directions</i>' + name + '</span></a>');
+				} else if (candidate.hafas) {
+					const eva = candidate.eva,
+						name = candidate.name,
+						hafas = candidate.hafas,
+						distance = candidate.distance.toFixed(1);
+
+					node = $('<a class="tablerow" href="/s/' + eva + '?hafas=' + hafas + '"><span><i class="material-icons" aria-hidden="true">directions</i>' + name + '</span></a>');
+				} else if (candidate.motis) {
+					const { id, name, motis } = candidate;
+
+					node = $('<a class="tablerow" href="/s/' + id + '?motis=' + motis + '"><span><i class="material-icons" aria-hidden="true">directions</i>' + name + '</span></a>');
+				} else {
+					const eva = candidate.eva,
+						name = candidate.name,
+						distance = candidate.distance.toFixed(1);
+
+					node = $('<a class="tablerow" href="/s/' + eva + '"><span><i class="material-icons" aria-hidden="true">train</i>' + name + '</span></a>');
+				}
+
 				node.click(function() {
 					$('nav .preloader-wrapper').addClass('active');
 				});

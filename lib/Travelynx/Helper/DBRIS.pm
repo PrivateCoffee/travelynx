@@ -69,7 +69,7 @@ sub get_departures_p {
 
 	my $agent = $self->{user_agent};
 
-	if ( $opt{station} =~ m{ [@] L = (?<eva> \d+ ) [@] }x ) {
+	if ( $opt{station} =~ m{ [@] L = (?<eva> \d+ ) }x ) {
 		$opt{station} = {
 			eva => $+{eva},
 			id  => $opt{station},
@@ -94,10 +94,18 @@ sub get_journey_p {
 	my ( $self, %opt ) = @_;
 
 	my $promise = Mojo::Promise->new;
-	my $now     = DateTime->now( time_zone => 'Europe/Berlin' );
 
 	my $agent = $self->{user_agent};
-	if ( my $proxy = $self->{service_config}{'bahn.de'}{proxy} ) {
+	my $proxy;
+	if ( my @proxies = @{ $self->{service_config}{'bahn.de'}{proxies} // [] } )
+	{
+		$proxy = $proxies[ int( rand( scalar @proxies ) ) ];
+	}
+	elsif ( my $p = $self->{service_config}{'bahn.de'}{proxy} ) {
+		$proxy = $p;
+	}
+
+	if ($proxy) {
 		$agent = Mojo::UserAgent->new;
 		$agent->proxy->http($proxy);
 		$agent->proxy->https($proxy);

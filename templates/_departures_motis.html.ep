@@ -8,7 +8,7 @@
 		% $row_class = "cancelled";
 		% $link_class = 'action-cancelled-from';
 	% }
-	% if (not $orientation_bar_shown and $result->datetime->epoch < $now_epoch) {
+	% if (not $orientation_bar_shown and $result->stopover->departure->epoch < $now_epoch) {
 		% $orientation_bar_shown = 1;
 		<li class="collection-item" id="now">
 			<strong class="dep-time">
@@ -18,36 +18,29 @@
 		</li>
 	% }
 	<li class="collection-item <%= $link_class %> <%= $row_class %>"
-		data-hafas="<%= $hafas %>"
-		data-station="<%= $result->station_eva %>"
+		data-motis="<%= $motis %>"
+		data-station="<%= $result->stopover->stop->id %>"
 		data-train="<%= $result->id %>"
-		data-ts="<%= ($result->sched_datetime // $result->datetime)->epoch %>"
+		data-ts="<%= ($result->stopover->departure)->epoch %>"
 	>
 		<a class="dep-time" href="#">
-			%= $result->datetime->strftime('%H:%M')
-			% if ($result->delay) {
-				(<%= sprintf('%+d', $result->delay) %>)
+			%= $result->stopover->departure->strftime('%H:%M')
+			% if ($result->stopover->delay) {
+				(<%= sprintf('%+d', $result->stopover->delay) %>)
 			% }
-			% elsif (not defined $result->delay and not $result->is_cancelled) {
+			% elsif (not $result->stopover->is_realtime and not $result->stopover->is_cancelled) {
 				<i class="material-icons" aria-label="Keine Echtzeitdaten vorhanden" style="font-size: 16px;">gps_off</i>
 			% }
 		</a>
-		<span class="dep-line <%= $result->type // q{} %>">
-			%= $result->line
+		<span class="dep-line <%= $result->mode %>" style="background-color: #<%= $result->route_color // q{} %>;">
+			%= $result->route_name
 		</span>
 		<span class="dep-dest">
 			% if ($result->is_cancelled) {
-				Fahrt nach <%= $result->destination %> entfällt
+				Fahrt nach <%= $result->headsign %> entfällt
 			% }
 			% else {
-				%= $result->destination
-				% if ($result->load and $result->load->{SECOND}) {
-					% my ($first, $second) = load_icon($result->load);
-					% if ($first ne 'help_outline') {
-						<i class="material-icons tiny" aria-hidden="true"><%= $first %></i>
-					% }
-					<i class="material-icons tiny" aria-hidden="true"><%= $second %></i>
-				% }
+				%= $result->headsign
 				% for my $checkin (@{$checkin_by_train->{$result->id} // []}) {
 					<span class="followee-checkin">
 						<i class="material-icons tiny" aria-label="Eine Person, der du folgst, ist hier eingecheckt">people</i>

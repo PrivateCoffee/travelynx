@@ -1,6 +1,7 @@
 package Travelynx::Controller::Traveling;
 
 # Copyright (C) 2020-2023 Birte Kristina Friesel
+# Copyright (C) 2025 networkException <git@nwex.de>
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 use Mojo::Base 'Mojolicious::Controller';
@@ -46,6 +47,16 @@ sub get_connecting_trains_p {
 
 		# We do get a little bit of via information, so this might work in some
 		# cases. But not reliably. Probably best to leave it out entirely then.
+		return $promise->reject;
+	}
+	if ( $user->{backend_efa} ) {
+
+		# TODO
+		return $promise->reject;
+	}
+	if ( $user->{backend_motis} ) {
+
+		# FIXME: The following code can't handle external_ids currently
 		return $promise->reject;
 	}
 
@@ -272,6 +283,9 @@ sub get_connecting_trains_p {
 	elsif ( $backend->{dbris} ) {
 		return $promise->reject;
 	}
+	elsif ( $backend->{efa} ) {
+		return $promise->reject;
+	}
 	elsif ( $backend->{hafas} ) {
 		my $hafas_service = $backend->{name};
 		$self->hafas->get_departures_p(
@@ -353,9 +367,12 @@ sub homepage {
 		$self->stash( timeline => [@timeline] );
 		my @recent_targets;
 		if ( $status->{checked_in} ) {
-			my $map_data = $self->journeys_to_map_data(
-				journeys => [$status],
-			);
+			my $map_data = {};
+			if ( $status->{arr_name} ) {
+				$map_data = $self->journeys_to_map_data(
+					journeys => [$status],
+				);
+			}
 			my $journey_visibility
 			  = $self->compute_effective_visibility(
 				$user->{default_visibility_str},
@@ -408,7 +425,7 @@ sub homepage {
 			}
 		}
 		else {
-			@recent_targets = uniq_by { $_->{eva} }
+			@recent_targets = uniq_by { $_->{external_id_or_eva} }
 			$self->journeys->get_latest_checkout_stations( uid => $uid );
 		}
 		$self->render(
@@ -440,9 +457,12 @@ sub status_card {
 	$self->stash( timeline => [@timeline] );
 
 	if ( $status->{checked_in} ) {
-		my $map_data = $self->journeys_to_map_data(
-			journeys => [$status],
-		);
+		my $map_data = {};
+		if ( $status->{arr_name} ) {
+			$map_data = $self->journeys_to_map_data(
+				journeys => [$status],
+			);
+		}
 		my $journey_visibility
 		  = $self->compute_effective_visibility(
 			$self->current_user->{default_visibility_str},
@@ -550,13 +570,19 @@ sub geolocation {
 		return;
 	}
 
-	my ( $dbris_service, $hafas_service );
+	my ( $dbris_service, $efa_service, $hafas_service, $motis_service );
 	my $backend = $self->stations->get_backend( backend_id => $backend_id );
 	if ( $backend->{dbris} ) {
 		$dbris_service = $backend->{name};
 	}
+	if ( $backend->{efa} ) {
+		$efa_service = $backend->{name};
+	}
 	elsif ( $backend->{hafas} ) {
 		$hafas_service = $backend->{name};
+	}
+	elsif ( $backend->{motis} ) {
+		$motis_service = $backend->{name};
 	}
 
 	if ($dbris_service) {
@@ -580,6 +606,50 @@ sub geolocation {
 						dbris    => $dbris_service,
 					}
 				} $dbris->results;
+				if ( @results > 10 ) {
+					@results = @results[ 0 .. 9 ];
+				}
+				$self->render(
+					json => {
+						candidates => [@results],
+					}
+				);
+			}
+		)->catch(
+			sub {
+				my ($err) = @_;
+				$self->render(
+					json => {
+						candidates => [],
+						warning    => $err,
+					}
+				);
+			}
+		)->wait;
+		return;
+	}
+	elsif ($efa_service) {
+		$self->render_later;
+
+		Travel::Status::DE::EFA->new_p(
+			promise    => 'Mojo::Promise',
+			user_agent => Mojo::UserAgent->new,
+			service    => $efa_service,
+			coord      => {
+				lat => $lat,
+				lon => $lon
+			}
+		)->then(
+			sub {
+				my ($efa) = @_;
+				my @results = map {
+					{
+						name     => $_->full_name,
+						eva      => $_->id_code,
+						distance => 0,
+						efa      => $efa_service,
+					}
+				} $efa->results;
 				if ( @results > 10 ) {
 					@results = @results[ 0 .. 9 ];
 				}
@@ -654,6 +724,55 @@ sub geolocation {
 
 		return;
 	}
+	elsif ($motis_service) {
+		$self->render_later;
+
+		Travel::Status::MOTIS->new_p(
+			promise    => 'Mojo::Promise',
+			user_agent => $self->ua,
+			time_zone  => 'Europe/Berlin',
+
+			service             => $motis_service,
+			stops_by_coordinate => {
+				lat => $lat,
+				lon => $lon
+			}
+		)->then(
+			sub {
+				my ($motis) = @_;
+				my @motis = map {
+					{
+						id       => $_->id,
+						name     => $_->name,
+						distance => 0,
+						motis    => $motis_service,
+					}
+				} $motis->results;
+
+				if ( @motis > 10 ) {
+					@motis = @motis[ 0 .. 9 ];
+				}
+
+				$self->render(
+					json => {
+						candidates => [@motis],
+					}
+				);
+			}
+		)->catch(
+			sub {
+				my ($err) = @_;
+				$self->render(
+					json => {
+						candidates => [],
+						warning    => $err,
+					}
+				);
+			}
+		)->wait;
+
+		return;
+	}
 
 	my @iris = map {
 		{
@@ -663,7 +782,6 @@ sub geolocation {
 			lon      => $_->[0][3],
 			lat      => $_->[0][4],
 			distance => $_->[1],
-			dbris    => 0,
 			hafas    => 0,
 		}
 	} Travel::Status::DE::IRIS::Stations::get_station_by_location( $lon,
@@ -733,7 +851,9 @@ sub travel_action {
 			sub {
 				return $self->checkin_p(
 					dbris        => $params->{dbris},
+					efa          => $params->{efa},
 					hafas        => $params->{hafas},
+					motis        => $params->{motis},
 					station      => $params->{station},
 					train_id     => $params->{train},
 					train_suffix => $params->{suffix},
@@ -767,6 +887,9 @@ sub travel_action {
 					my $station_link = '/s/' . $destination;
 					if ( $status->{is_dbris} ) {
 						$station_link .= '?dbris=' . $status->{backend_name};
+					}
+					elsif ( $status->{is_efa} ) {
+						$station_link .= '?efa=' . $status->{backend_name};
 					}
 					elsif ( $status->{is_hafas} ) {
 						$station_link .= '?hafas=' . $status->{backend_name};
@@ -806,6 +929,9 @@ sub travel_action {
 				my $station_link = '/s/' . $params->{station};
 				if ( $status->{is_dbris} ) {
 					$station_link .= '?dbris=' . $status->{backend_name};
+				}
+				elsif ( $status->{is_efa} ) {
+					$station_link .= '?efa=' . $status->{backend_name};
 				}
 				elsif ( $status->{is_hafas} ) {
 					$station_link .= '?hafas=' . $status->{backend_name};
@@ -865,11 +991,24 @@ sub travel_action {
 					  . '?dbris='
 					  . $status->{backend_name};
 				}
+				elsif ( $status->{is_efa} ) {
+					$redir
+					  = '/s/'
+					  . $status->{dep_eva} . '?efa='
+					  . $status->{backend_name};
+				}
 				elsif ( $status->{is_hafas} ) {
 					$redir
 					  = '/s/'
 					  . $status->{dep_eva}
 					  . '?hafas='
+					  . $status->{backend_name};
+				}
+				elsif ( $status->{is_motis} ) {
+					$redir
+					  = '/s/'
+					  . $status->{dep_external_id}
+					  . '?motis='
 					  . $status->{backend_name};
 				}
 				else {
@@ -888,7 +1027,9 @@ sub travel_action {
 		$self->render_later;
 		$self->checkin_p(
 			dbris    => $params->{dbris},
+			efa      => $params->{efa},
 			hafas    => $params->{hafas},
+			motis    => $params->{motis},
 			station  => $params->{station},
 			train_id => $params->{train},
 			ts       => $params->{ts},
@@ -1017,10 +1158,35 @@ sub station {
 		$timestamp = DateTime->now( time_zone => 'Europe/Berlin' );
 	}
 
-	my $dbris_service = $self->param('dbris')
-	  // ( $user->{backend_dbris} ? $user->{backend_name} : undef );
-	my $hafas_service = $self->param('hafas')
-	  // ( $user->{backend_hafas} ? $user->{backend_name} : undef );
+	my ( $dbris_service, $efa_service, $hafas_service, $motis_service );
+
+	if ( $self->param('dbris') ) {
+		$dbris_service = $self->param('dbris');
+	}
+	elsif ( $self->param('efa') ) {
+		$efa_service = $self->param('efa');
+	}
+	elsif ( $self->param('hafas') ) {
+		$hafas_service = $self->param('hafas');
+	}
+	elsif ( $self->param('motis') ) {
+		$motis_service = $self->param('motis');
+	}
+	else {
+		if ( $user->{backend_dbris} ) {
+			$dbris_service = $user->{backend_name};
+		}
+		elsif ( $user->{backend_efa} ) {
+			$efa_service = $user->{backend_name};
+		}
+		elsif ( $user->{backend_hafas} ) {
+			$hafas_service = $user->{backend_name};
+		}
+		elsif ( $user->{backend_motis} ) {
+			$motis_service = $user->{backend_name};
+		}
+	}
+
 	my $promise;
 	if ($dbris_service) {
 		if ( $station !~ m{ [@] L = \d+ }x ) {
@@ -1044,10 +1210,48 @@ sub station {
 			lookbehind => 30,
 		);
 	}
+	elsif ($efa_service) {
+		$promise = $self->efa->get_departures_p(
+			service    => $efa_service,
+			name       => $station,
+			timestamp  => $timestamp,
+			lookbehind => 10,
+			lookahead  => 50,
+		);
+	}
 	elsif ($hafas_service) {
 		$promise = $self->hafas->get_departures_p(
 			service    => $hafas_service,
 			eva        => $station,
+			timestamp  => $timestamp,
+			lookbehind => 30,
+			lookahead  => 30,
+		);
+	}
+	elsif ($motis_service) {
+		if ( $station !~ m/.*_.*/ ) {
+			$self->render_later;
+			$self->motis->get_station_by_query_p(
+				service => $motis_service,
+				query   => $station,
+			)->then(
+				sub {
+					my ($motis_station) = @_;
+					$self->redirect_to( '/s/' . $motis_station->{id} );
+				}
+			)->catch(
+				sub {
+					my ($err) = @_;
+					say "$err";
+
+					$self->redirect_to('/');
+				}
+			)->wait;
+			return;
+		}
+		$promise = $self->motis->get_departures_p(
+			service    => $motis_service,
+			station_id => $station,
 			timestamp  => $timestamp,
 			lookbehind => 30,
 			lookahead  => 30,
@@ -1106,6 +1310,29 @@ sub station {
 					related_stations => [],
 				};
 			}
+			elsif ($efa_service) {
+				@results = map { $_->[0] }
+				  sort { $b->[1] <=> $a->[1] }
+				  map { [ $_, $_->datetime->epoch ] } $status->results;
+				$status = {
+					station_eva      => $status->stop->id_num,
+					station_name     => $status->stop->full_name,
+					related_stations => [],
+				};
+			}
+			elsif ($motis_service) {
+				@results = map { $_->[0] }
+				  sort { $b->[1] <=> $a->[1] }
+				  map  { [ $_, $_->stopover->departure->epoch ] }
+				  $status->results;
+
+				$status = {
+					station_eva  => $station,
+					station_name =>
+					  $status->{results}->[0]->stopover->stop->name,
+					related_stations => [],
+				};
+			}
 			else {
 
 				# You can't check into a train which terminates here
@@ -1136,7 +1363,7 @@ sub station {
 			}
 
 			my $connections_p;
-			if ( $trip_id and $hafas_service ) {
+			if ( $trip_id and ( $dbris_service or $hafas_service ) ) {
 				@results = grep { $_->id eq $trip_id } @results;
 			}
 			elsif ( $train and not $hafas_service ) {
@@ -1152,12 +1379,14 @@ sub station {
 						eva => $user_status->{cancellation}{dep_eva},
 						destination_name =>
 						  $user_status->{cancellation}{arr_name},
+						efa   => $efa_service,
 						hafas => $hafas_service,
 					);
 				}
 				else {
 					$connections_p = $self->get_connecting_trains_p(
 						eva   => $status->{station_eva},
+						efa   => $efa_service,
 						hafas => $hafas_service
 					);
 				}
@@ -1171,7 +1400,9 @@ sub station {
 							'departures',
 							user              => $user,
 							dbris             => $dbris_service,
+							efa               => $efa_service,
 							hafas             => $hafas_service,
+							motis             => $motis_service,
 							eva               => $status->{station_eva},
 							datetime          => $timestamp,
 							now_in_range      => $now_within_range,
@@ -1191,7 +1422,9 @@ sub station {
 							'departures',
 							user             => $user,
 							dbris            => $dbris_service,
+							efa              => $efa_service,
 							hafas            => $hafas_service,
+							motis            => $motis_service,
 							eva              => $status->{station_eva},
 							datetime         => $timestamp,
 							now_in_range     => $now_within_range,
@@ -1210,7 +1443,9 @@ sub station {
 					'departures',
 					user             => $user,
 					dbris            => $dbris_service,
+					efa              => $efa_service,
 					hafas            => $hafas_service,
+					motis            => $motis_service,
 					eva              => $status->{station_eva},
 					datetime         => $timestamp,
 					now_in_range     => $now_within_range,
@@ -1231,6 +1466,19 @@ sub station {
 					'disambiguation',
 					suggestions => $status->{suggestions},
 					status      => 300,
+				);
+			}
+			elsif ( $efa_service
+				and $status
+				and scalar $status->name_candidates )
+			{
+				$self->render(
+					'disambiguation',
+					suggestions => [
+						map { { name => $_->name, eva => $_->id_num } }
+						  $status->name_candidates
+					],
+					status => 300,
 				);
 			}
 			elsif ( $hafas_service
@@ -1274,7 +1522,7 @@ sub station {
 				)->wait;
 			}
 			elsif ( $err
-				=~ m{svcRes|connection close|Service Temporarily Unavailable|Forbidden}
+				=~ m{svcRes|connection close|Service Temporarily Unavailable|Forbidden|HTTP 500 Internal Server Error}
 			  )
 			{
 				$self->render(
@@ -1314,6 +1562,23 @@ sub redirect_to_station {
 			sub {
 				my ($dbris_station) = @_;
 				$self->redirect_to( '/s/' . $dbris_station->{id} );
+			}
+		)->catch(
+			sub {
+				my ($err) = @_;
+				$self->redirect_to('/');
+			}
+		)->wait;
+	}
+	elsif ( $self->param('backend_motis') ) {
+		$self->render_later;
+		$self->motis->get_station_by_query(
+			service => $self->param('backend_motis'),
+			query   => $station,
+		)->then(
+			sub {
+				my ($motis_station) = @_;
+				$self->redirect_to( '/s/' . $motis_station->{id} );
 			}
 		)->catch(
 			sub {
@@ -1583,15 +1848,19 @@ sub csv_history {
 	my $buf = q{};
 
 	$csv->combine(
-		qw(Zugtyp Linie Nummer Start Ziel),
-		'Start (DS100)',
-		'Ziel (DS100)',
-		'Abfahrt (soll)',
-		'Abfahrt (ist)',
-		'Ankunft (soll)',
-		'Ankunft (ist)',
-		'Kommentar',
-		'ID'
+		qw(type line number),
+		'departure stop name',
+		'departure stop id',
+		'arrival stop name',
+		'arrival stop id',
+		'scheduled departure',
+		'real-time departure',
+		'scheduled arrival',
+		'real-time arrival',
+		'operator',
+		'carriage type',
+		'comment',
+		'id'
 	);
 	$buf .= $csv->string;
 
@@ -1608,13 +1877,17 @@ sub csv_history {
 				$journey->{line},
 				$journey->{no},
 				$journey->{from_name},
+				$journey->{from_eva},
 				$journey->{to_name},
-				$journey->{from_ds100},
-				$journey->{to_ds100},
-				$journey->{sched_departure}->strftime('%Y-%m-%d %H:%M'),
-				$journey->{rt_departure}->strftime('%Y-%m-%d %H:%M'),
-				$journey->{sched_arrival}->strftime('%Y-%m-%d %H:%M'),
-				$journey->{rt_arrival}->strftime('%Y-%m-%d %H:%M'),
+				$journey->{to_eva},
+				$journey->{sched_departure}->strftime('%Y-%m-%d %H:%M:%S'),
+				$journey->{rt_departure}->strftime('%Y-%m-%d %H:%M:%S'),
+				$journey->{sched_arrival}->strftime('%Y-%m-%d %H:%M:%S'),
+				$journey->{rt_arrival}->strftime('%Y-%m-%d %H:%M:%S'),
+				$journey->{user_data}{operator} // q{},
+				join( q{ + },
+					map { $_->{desc} // $_->{name} }
+					  @{ $journey->{user_data}{wagongroups} // [] } ),
 				$journey->{user_data}{comment} // q{},
 				$journey->{id}
 			)
@@ -2250,6 +2523,8 @@ sub edit_journey {
 sub add_journey_form {
 	my ($self) = @_;
 
+	$self->stash( backend_id => $self->current_user->{backend_id} );
+
 	if ( $self->param('action') and $self->param('action') eq 'save' ) {
 		my $parser = DateTime::Format::Strptime->new(
 			pattern   => '%d.%m.%Y %H:%M',
@@ -2272,7 +2547,7 @@ sub add_journey_form {
 				with_autocomplete => 1,
 				status            => 400,
 				error             =>
-'Zug muss als „Typ Nummer“ oder „Typ Linie Nummer“ eingegeben werden.'
+'Fahrt muss als „Typ Nummer“ oder „Typ Linie Nummer“ eingegeben werden.'
 			);
 			return;
 		}
@@ -2347,6 +2622,243 @@ sub add_journey_form {
 	else {
 		$self->render(
 			'add_journey',
+			with_autocomplete => 1,
+			error             => undef
+		);
+	}
+}
+
+sub add_intransit_form {
+	my ($self) = @_;
+
+	$self->stash( backend_id => $self->current_user->{backend_id} );
+
+	if ( $self->param('action') and $self->param('action') eq 'save' ) {
+		my $parser = DateTime::Format::Strptime->new(
+			pattern   => '%d.%m.%Y %H:%M',
+			locale    => 'de_DE',
+			time_zone => 'Europe/Berlin'
+		);
+		my %opt;
+		my %trip;
+
+		my @parts = split( qr{\s+}, $self->param('train') );
+
+		if ( @parts == 2 ) {
+			@trip{ 'train_type', 'train_no' } = @parts;
+		}
+		elsif ( @parts == 3 ) {
+			@trip{ 'train_type', 'train_line', 'train_no' } = @parts;
+		}
+		else {
+			$self->render(
+				'add_intransit',
+				with_autocomplete => 1,
+				status            => 400,
+				error             =>
+'Fahrt muss als „Typ Nummer“ oder „Typ Linie Nummer“ eingegeben werden.'
+			);
+			return;
+		}
+
+		for my $key (qw(sched_departure sched_arrival)) {
+			if ( $self->param($key) ) {
+				my $datetime = $parser->parse_datetime( $self->param($key) );
+				if ( not $datetime ) {
+					$self->render(
+						'add_intransit',
+						with_autocomplete => 1,
+						status            => 400,
+						error => "${key}: Ungültiges Datums-/Zeitformat"
+					);
+					return;
+				}
+				$trip{$key} = $datetime;
+			}
+		}
+
+		for my $key (qw(dep_station arr_station route comment)) {
+			$trip{$key} = $self->param($key);
+		}
+
+		$opt{backend_id} = $self->current_user->{backend_id};
+
+		my $dep_stop = $self->stations->search( $trip{dep_station},
+			backend_id => $opt{backend_id} );
+		my $arr_stop = $self->stations->search( $trip{arr_station},
+			backend_id => $opt{backend_id} );
+
+		if ( defined $trip{route} ) {
+			$trip{route} = [ split( qr{\r?\n\r?}, $trip{route} ) ];
+		}
+
+		my $route_has_start = 0;
+		my $route_has_stop  = 0;
+
+		for my $station ( @{ $trip{route} || [] } ) {
+			if (   $station eq $dep_stop->{name}
+				or $station eq $dep_stop->{eva} )
+			{
+				$route_has_start = 1;
+			}
+			if (   $station eq $arr_stop->{name}
+				or $station eq $arr_stop->{eva} )
+			{
+				$route_has_stop = 1;
+			}
+		}
+
+		my @route;
+
+		if ( not $route_has_start ) {
+			push(
+				@route,
+				[
+					$dep_stop->{name},
+					$dep_stop->{eva},
+					{
+						lat => $dep_stop->{lat},
+						lon => $dep_stop->{lon},
+					}
+				]
+			);
+		}
+
+		if ( $trip{route} ) {
+			my @unknown_stations;
+			my $prev_epoch;
+			for my $station ( @{ $trip{route} } ) {
+				my $ts;
+				my %station_data;
+				if ( $station
+					=~ m{ ^ (?<stop> [^@]+? ) \s* [@] \s* (?<timestamp> .+ ) $ }x
+				  )
+				{
+					$station = $+{stop};
+					$ts      = $parser->parse_datetime( $+{timestamp} );
+					if ( $ts and $ts->epoch > $prev_epoch ) {
+						$station_data{sched_arr} = $ts->epoch;
+						$station_data{sched_dep} = $ts->epoch;
+						$prev_epoch              = $ts->epoch;
+					}
+					else {
+						$self->render(
+							'add_intransit',
+							with_autocomplete => 1,
+							status            => 400,
+							error => "Ungültige Zeitangabe: $+{timestamp}"
+						);
+						return;
+					}
+				}
+				my $station_info = $self->stations->search( $station,
+					backend_id => $opt{backend_id} );
+				if ($station_info) {
+					$station_data{lat} = $station_info->{lat};
+					$station_data{lon} = $station_info->{lon};
+					push(
+						@route,
+						[
+							$station_info->{name}, $station_info->{eva},
+							\%station_data,
+						]
+					);
+				}
+				else {
+					push( @route,            [ $station, undef, {} ] );
+					push( @unknown_stations, $station );
+				}
+			}
+
+			if ( @unknown_stations == 1 ) {
+				$self->render(
+					'add_intransit',
+					with_autocomplete => 1,
+					status            => 400,
+					error => "Unbekannter Unterwegshalt: $unknown_stations[0]"
+				);
+				return;
+			}
+			elsif (@unknown_stations) {
+				$self->render(
+					'add_intransit',
+					with_autocomplete => 1,
+					status            => 400,
+					error             => 'Unbekannte Unterwegshalte: '
+					  . join( ', ', @unknown_stations )
+				);
+				return;
+			}
+		}
+
+		if ( not $route_has_stop ) {
+			push(
+				@route,
+				[
+					$arr_stop->{name},
+					$arr_stop->{eva},
+					{
+						lat => $arr_stop->{lat},
+						lon => $arr_stop->{lon},
+					}
+				]
+			);
+		}
+
+		for my $station (@route) {
+			if (   $station->[0] eq $dep_stop->{name}
+				or $station->[1] eq $dep_stop->{eva} )
+			{
+				$station->[2]{sched_dep} = $trip{sched_departure}->epoch;
+			}
+			if (   $station->[0] eq $arr_stop->{name}
+				or $station->[1] eq $arr_stop->{eva} )
+			{
+				$station->[2]{sched_arr} = $trip{sched_arrival}->epoch;
+			}
+		}
+
+		my $error;
+		my $db = $self->pg->db;
+		my $tx = $db->begin;
+
+		$trip{dep_id} = $dep_stop->{eva};
+		$trip{arr_id} = $arr_stop->{eva};
+		$trip{route}  = \@route;
+
+		$opt{db}     = $db;
+		$opt{manual} = \%trip;
+		$opt{uid}    = $self->current_user->{id};
+
+		if ( not defined $trip{dep_id} ) {
+			$error = "Unknown departure stop '$trip{dep_station}'";
+		}
+		elsif ( not defined $trip{arr_id} ) {
+			$error = "Unknown arrival stop '$trip{arr_station}'";
+		}
+		elsif ( $trip{sched_arrival} <= $trip{sched_departure} ) {
+			$error = 'Ankunftszeit muss nach Abfahrtszeit liegen';
+		}
+		else {
+			$error = $self->in_transit->add(%opt);
+		}
+
+		if ($error) {
+			$self->render(
+				'add_intransit',
+				with_autocomplete => 1,
+				status            => 400,
+				error             => $error,
+			);
+		}
+		else {
+			$tx->commit;
+			$self->redirect_to('/');
+		}
+	}
+	else {
+		$self->render(
+			'add_intransit',
 			with_autocomplete => 1,
 			error             => undef
 		);

@@ -418,7 +418,7 @@ sub get {
 		  . 'extract(epoch from registered_at) as registered_at_ts, '
 		  . 'extract(epoch from last_seen) as last_seen_ts, '
 		  . 'extract(epoch from deletion_requested) as deletion_requested_ts, '
-		  . 'backend_id, backend_name, hafas, dbris',
+		  . 'backend_id, backend_name, dbris, efa, hafas, motis',
 		{ id => $uid }
 	)->hash;
 	if ($user) {
@@ -440,7 +440,7 @@ sub get {
 			past_all    => $user->{public_level} & 0x10000 ? 1 : 0,
 			email       => $user->{email},
 			sb_template =>
-'https://dbf.finalrewind.org/{name}?rt=1&dbris={dbris}&hafas={hafas}#{id_or_tttn}',
+'https://dbf.finalrewind.org/{name}?dbris={dbris}&efa={efa}&hafas={hafas}&motis={motis}#{id_or_tttn}',
 			registered_at => DateTime->from_epoch(
 				epoch     => $user->{registered_at_ts},
 				time_zone => 'Europe/Berlin'
@@ -458,7 +458,9 @@ sub get {
 			backend_id    => $user->{backend_id},
 			backend_name  => $user->{backend_name},
 			backend_dbris => $user->{dbris},
+			backend_efa   => $user->{efa},
 			backend_hafas => $user->{hafas},
+			backend_motis => $user->{motis},
 		};
 	}
 	return undef;

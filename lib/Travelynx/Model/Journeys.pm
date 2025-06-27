@@ -4,16 +4,16 @@ package Travelynx::Model::Journeys;
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-use GIS::Distance;
-use List::MoreUtils qw(after_incl before_incl);
-
 use strict;
 use warnings;
 use 5.020;
 use utf8;
 
 use DateTime;
+use DateTime::Format::Strptime;
+use GIS::Distance;
 use JSON;
+use List::MoreUtils qw(after_incl before_incl);
 
 my %visibility_itoa = (
 	100 => 'public',
@@ -183,20 +183,44 @@ sub add {
 	}
 
 	if ( $opt{route} ) {
+		my $parser = DateTime::Format::Strptime->new(
+			pattern   => '%d.%m.%Y %H:%M',
+			locale    => 'de_DE',
+			time_zone => 'Europe/Berlin'
+		);
 		my @unknown_stations;
+		my $prev_epoch = 0;
+
 		for my $station ( @{ $opt{route} } ) {
+			my $ts;
+			my %station_data;
+			if ( $station
+				=~ m{ ^ (?<stop> [^@]+? ) \s* [@] \s* (?<timestamp> .+ ) $ }x )
+			{
+				$station = $+{stop};
+				$ts      = $parser->parse_datetime( $+{timestamp} );
+				if ($ts) {
+					my $epoch = $ts->epoch;
+					if ( $epoch < $prev_epoch ) {
+						return ( undef,
+'Zeitstempel der Unterwegshalte müssen monoton steigend sein (keine Zeitreisen und keine Portale)'
+						);
+					}
+					$station_data{sched_arr} = $epoch;
+					$station_data{sched_dep} = $epoch;
+					$prev_epoch              = $epoch;
+				}
+			}
 			my $station_info = $self->{stations}
 			  ->search( $station, backend_id => $opt{backend_id} );
 			if ($station_info) {
+				$station_data{lat} = $station_info->{lat};
+				$station_data{lon} = $station_info->{lon};
 				push(
 					@route,
 					[
-						$station_info->{name},
-						$station_info->{eva},
-						{
-							lat => $station_info->{lat},
-							lon => $station_info->{lon},
-						}
+						$station_info->{name}, $station_info->{eva},
+						\%station_data,
 					]
 				);
 			}
@@ -283,8 +307,14 @@ sub add_from_in_transit {
 	my $db      = $opt{db};
 	my $journey = $opt{journey};
 
+	if ( $journey->{train_id} eq 'manual' ) {
+		$journey->{edited} = 0x3fff;
+	}
+	else {
+		$journey->{edited} = 0;
+	}
+
 	delete $journey->{data};
-	$journey->{edited}        = 0;
 	$journey->{checkout_time} = DateTime->now( time_zone => 'Europe/Berlin' );
 
 	return $db->insert( 'journeys', $journey, { returning => 'id' } )
@@ -549,7 +579,7 @@ sub get {
 
 	my @select
 	  = (
-		qw(journey_id is_dbris is_iris is_hafas backend_name backend_id train_type train_line train_no checkin_ts sched_dep_ts real_dep_ts dep_eva dep_ds100 dep_name dep_lat dep_lon checkout_ts sched_arr_ts real_arr_ts arr_eva arr_ds100 arr_name arr_lat arr_lon cancelled edited route messages user_data visibility effective_visibility)
+		qw(journey_id is_dbris is_iris is_hafas is_motis backend_name backend_id train_type train_line train_no checkin_ts sched_dep_ts real_dep_ts dep_eva dep_ds100 dep_name dep_platform dep_lat dep_lon checkout_ts sched_arr_ts real_arr_ts arr_eva arr_ds100 arr_name arr_platform arr_lat arr_lon cancelled edited route messages user_data visibility effective_visibility)
 	  );
 	my %where = (
 		user_id   => $uid,
@@ -610,6 +640,7 @@ sub get {
 			is_dbris             => $entry->{is_dbris},
 			is_iris              => $entry->{is_iris},
 			is_hafas             => $entry->{is_hafas},
+			is_motis             => $entry->{is_motis},
 			backend_name         => $entry->{backend_name},
 			backend_id           => $entry->{backend_id},
 			type                 => $entry->{train_type},
@@ -618,6 +649,7 @@ sub get {
 			from_eva             => $entry->{dep_eva},
 			from_ds100           => $entry->{dep_ds100},
 			from_name            => $entry->{dep_name},
+			from_platform        => $entry->{dep_platform},
 			from_latlon          => [ $entry->{dep_lat}, $entry->{dep_lon} ],
 			checkin_ts           => $entry->{checkin_ts},
 			sched_dep_ts         => $entry->{sched_dep_ts},
@@ -625,6 +657,7 @@ sub get {
 			to_eva               => $entry->{arr_eva},
 			to_ds100             => $entry->{arr_ds100},
 			to_name              => $entry->{arr_name},
+			to_platform          => $entry->{arr_platform},
 			to_latlon            => [ $entry->{arr_lat}, $entry->{arr_lon} ],
 			checkout_ts          => $entry->{checkout_ts},
 			sched_arr_ts         => $entry->{sched_arr_ts},
@@ -871,8 +904,11 @@ sub get_latest_checkout_stations {
 	my $res = $db->select(
 		'journeys_str',
 		[
-			'arr_name',     'arr_eva',  'train_id', 'backend_id',
-			'backend_name', 'is_dbris', 'is_hafas'
+			'arr_name',        'arr_eva',
+			'arr_external_id', 'train_id',
+			'backend_id',      'backend_name',
+			'is_dbris',        'is_efa',
+			'is_hafas',        'is_motis'
 		],
 		{
 			user_id   => $uid,
@@ -894,10 +930,14 @@ sub get_latest_checkout_stations {
 		push(
 			@ret,
 			{
-				name       => $row->{arr_name},
-				eva        => $row->{arr_eva},
+				name               => $row->{arr_name},
+				eva                => $row->{arr_eva},
+				external_id_or_eva => $row->{arr_external_id}
+				  // $row->{arr_eva},
 				dbris      => $row->{is_dbris} ? $row->{backend_name} : 0,
+				efa        => $row->{is_efa}   ? $row->{backend_name} : 0,
 				hafas      => $row->{is_hafas} ? $row->{backend_name} : 0,
+				motis      => $row->{is_motis} ? $row->{backend_name} : 0,
 				backend_id => $row->{backend_id},
 			}
 		);
@@ -1665,7 +1705,10 @@ sub compute_stats {
 					@inconsistencies,
 					{
 						conflict => {
-							train => $journey->{type} . ' '
+							train => (
+								$journey->{is_motis} ? '' : $journey->{type}
+							  )
+							  . ' '
 							  . ( $journey->{line} // $journey->{no} ),
 							arr => epoch_to_dt( $journey->{rt_arr_ts} )
 							  ->strftime('%d.%m.%Y %H:%M'),
@@ -1691,7 +1734,8 @@ sub compute_stats {
 		$next_departure = $journey->{rt_dep_ts};
 		$next_id        = $journey->{id};
 		$next_train
-		  = $journey->{type} . ' ' . ( $journey->{line} // $journey->{no} ),;
+		  = ( $journey->{is_motis} ? '' : $journey->{type} ) . ' '
+		  . ( $journey->{line} // $journey->{no} ),;
 	}
 	my $ret = {
 		km_route             => $km_route,
@@ -1724,6 +1768,8 @@ sub compute_stats {
 sub get_stats {
 	my ( $self, %opt ) = @_;
 
+	$self->{log}->debug("get_stats");
+
 	if ( $opt{cancelled} ) {
 		$self->{log}
 		  ->warn('get_journey_stats called with illegal option cancelled => 1');
@@ -1750,8 +1796,11 @@ sub get_stats {
 		)
 	  )
 	{
+		$self->{log}->debug("got cached journey stats for $year/$month");
 		return $stats;
 	}
+
+	$self->{log}->debug("computing journey stats for $year/$month");
 
 	my $interval_start = DateTime->new(
 		time_zone => 'Europe/Berlin',
