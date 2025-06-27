@@ -1,0 +1,13 @@
+/COPYING
+/cpanfile*
+/docker*
+/Dockerfile
+/t
+/sass
+/LICENSES/
+/examples/
+/cache/
+/public/static/
+/share/
+*.html.ep
+*.css

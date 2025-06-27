@@ -68,3 +68,10 @@ tags
 
 ### theme stuff ###
 sass/node_modules
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+venv/
