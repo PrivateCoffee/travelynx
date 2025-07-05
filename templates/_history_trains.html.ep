@@ -17,7 +17,7 @@
 			<li class="collection-item">
 				<a href="<%= $detail_link %>">
 					<span class="dep-line <%= ($travel->{type} // q{}) =~ tr{a-zA-Z_-}{}cdr %>">
-						% if (not $travel->{is_motis}) {
+						% if (length($travel->{type}) < 5 and not $travel->{is_motis}) {
 							<%= $travel->{type} %>
 						% }
 						<%= $travel->{line}  // $travel->{no}%>
@@ -37,8 +37,8 @@
 								<i class="material-icons">timer_off</i>
 							% } else {
 								%= $travel->{rt_arrival}->strftime('%H:%M');
-								% if ($travel->{sched_arrival} != $travel->{rt_arrival}) {
-									(<%= sprintf('%+d', ($travel->{rt_arrival}->epoch - $travel->{sched_arrival}->epoch) / 60) %>)
+								% if ($travel->{delay_arr} and int($travel->{delay_arr} / 60)) {
+									(<%= sprintf('%+d', $travel->{delay_arr} / 60) %>)
 								% }
 							% }
 						% }
@@ -55,8 +55,8 @@
 						% }
 						% else {
 							<%= $travel->{rt_departure}->strftime('%H:%M') %>
-							% if ($travel->{sched_departure} != $travel->{rt_departure}) {
-								(<%= sprintf('%+d', ($travel->{rt_departure}->epoch - $travel->{sched_departure}->epoch) / 60) %>)
+							% if ($travel->{delay_dep} and int($travel->{delay_dep} / 60)) {
+								(<%= sprintf('%+d', $travel->{delay_dep} / 60) %>)
 							% }
 						% }
 						<strong><%= $travel->{from_name} %></strong>
